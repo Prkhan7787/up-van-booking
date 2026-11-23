@@ -14,6 +14,7 @@ final class ConnectionFactory
             'migration' => ['prefix' => 'MIGRATION_DB_', 'database' => MigrationTarget::PRODUCTION, 'username' => 'up_van_migrator'],
             'test' => ['prefix' => 'TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test'],
             'auth_test' => ['prefix' => 'AUTH_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_auth_test'],
+            'driver_auth_test' => ['prefix' => 'AUTH_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_auth_test'],
             'reset_maintenance' => ['prefix' => 'RESET_MAINTENANCE_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_reset_maintenance'],
             'test_provisioner' => ['prefix' => 'TEST_PROVISIONER_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_provisioner'],
             'migration_test' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
@@ -38,6 +39,7 @@ final class ConnectionFactory
         if ($config['username'] !== $connection['username']) throw new SafetyException('MySQL account does not match connection purpose.');
         if ($config['host'] !== '127.0.0.1') throw new SafetyException('MySQL account host must match 127.0.0.1.');
         if (!ctype_digit($config['port']) || (int)$config['port'] < 1 || (int)$config['port'] > 65535) throw new SafetyException('Invalid database port.');
+        if ($purpose === 'driver_auth_test') DriverDatabaseIdentity::assertConfig($config);
         if ($config['password'] === '') throw new SafetyException('Dedicated project credentials are not configured.');
         return $config;
     }
@@ -48,6 +50,7 @@ final class ConnectionFactory
         if($purpose==='migration_test_006_resume') Migration006RestoreIdentity::assertConfig($config);
         $pdo = self::openPdo($config, $selectDatabase);
         try {
+            if ($purpose === 'driver_auth_test') DriverDatabaseIdentity::inspect($pdo);
             if(in_array($purpose,['migration_test_007','migration_test_008'],true))Migration007TargetIdentity::inspect($pdo);
             self::assertConnectionIdentity($pdo, $purpose, $config['database'], $config['username'], $config['host'], $selectDatabase);
             if($purpose==='reset_maintenance' && (string)$pdo->query('SELECT @@server_uuid')->fetchColumn()!=='77218fbd-d66d-11f1-9a0a-5c2886f057d5')throw new SafetyException('Reset maintenance server UUID rejected.');
@@ -64,6 +67,7 @@ final class ConnectionFactory
                 $result=GrantVerifier::evaluate($resolved['grants'],MigrationTarget::TEST,BookingResetMaintenanceGrantPlan::rules(),$partialRevokes,$resolved['roles_resolved']);
                 if($result['status']!=='PASS' || $result['missing_privileges']!==[] || $result['unexpected_privileges']!==[])throw new SafetyException('Reset maintenance grants do not match the reviewed scope.');
             }
+            elseif($purpose==='driver_auth_test') self::assertDriverAuthGrants($pdo);
             else self::assertScopedGrants($pdo, $config['database'], in_array($purpose,['migration','migration_test'],true));
             return $pdo;
         } catch (PDOException $error) {
@@ -197,6 +201,10 @@ final class ConnectionFactory
                 $profiles[$name.'_'.$suffix]=BookingCapabilityGrantGuard::merge($base,$addition);
             }
         }
+        $runtimeProfiles = $profiles;
+        foreach ($runtimeProfiles as $name=>$base) {
+            $profiles['driver_'.$name] = BookingCapabilityGrantGuard::merge($base, DriverAuthGrantPlan::additions());
+        }
         return GrantVerifier::evaluateProfiles($grants,MigrationTarget::TEST,$profiles,$partialRevokes,$rolesResolved);
     }
 
@@ -324,7 +332,7 @@ final class ConnectionFactory
         $targetPurpose = match ($purpose) {
             'runtime', 'preflight' => MigrationTarget::PRODUCTION,
             'migration' => MigrationTarget::PRODUCTION,
-            'test', 'auth_test', 'reset_maintenance', 'test_provisioner', 'migration_test', 'migration_test_006', 'migration_test_006_resume', 'migration_test_007', 'migration_test_008' => MigrationTarget::TEST,
+            'test', 'auth_test', 'driver_auth_test', 'reset_maintenance', 'test_provisioner', 'migration_test', 'migration_test_006', 'migration_test_006_resume', 'migration_test_007', 'migration_test_008' => MigrationTarget::TEST,
             default => throw new SafetyException('Unknown connection purpose.'),
         };
         if ($selectDatabase) {
@@ -336,6 +344,22 @@ final class ConnectionFactory
         $currentUser = (string) $pdo->query('SELECT CURRENT_USER()')->fetchColumn();
         if ($currentUser !== $username . '@' . $host || $database !== $targetPurpose) {
             throw new SafetyException('Authenticated MySQL account does not match connection purpose.');
+        }
+    }
+
+    public static function assertDriverAuthGrants(PDO $pdo): void
+    {
+        if ($pdo->query('SELECT DATABASE()')->fetchColumn() !== MigrationTarget::TEST
+            || $pdo->query('SELECT CURRENT_USER()')->fetchColumn() !== 'up_van_auth_test@127.0.0.1') {
+            throw new SafetyException('Driver authentication database identity rejected.');
+        }
+        $resolved = GrantVerifier::currentUserGrants($pdo);
+        $partialRevokes = (bool)$pdo->query('SELECT @@GLOBAL.partial_revokes')->fetchColumn();
+        $fuelType = RuntimeColumnProbe::inspect($pdo, 'vehicles', 'fuel_type');
+        if ($fuelType['status'] === 'ERROR') throw new SafetyException('Driver runtime vehicle schema is inconsistent or not visible.');
+        $result = self::evaluateAuthRuntimeGrants($resolved['grants'], $partialRevokes, $resolved['roles_resolved'], $fuelType['status'] === 'PRESENT');
+        if ($result['status'] !== 'PASS' || !str_starts_with((string)($result['profile'] ?? ''), 'driver_')) {
+            throw new SafetyException('Driver authentication grants do not match the reviewed capability scope.');
         }
     }
 }

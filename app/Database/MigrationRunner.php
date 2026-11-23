@@ -55,6 +55,34 @@ final class MigrationRunner
         return ['ledger'=>'present','objects'=>$names,'migrations'=>$migrations];
     }
 
+    /** SELECT-only 010 pre/postflight. No execution/resume path is enabled here. */
+    public function driver010Inspect(bool $postflight = false): array
+    {
+        if ($this->target !== MigrationTarget::TEST) throw new SafetyException('MIGRATION_010_TEST_ONLY');
+        DriverDatabaseIdentity::inspect($this->db, 'up_van_test_migrator');
+        $this->lastSafetyCheck = 'MIGRATION_010_BASELINE';
+        $ledger = $this->rows('SELECT version, checksum, status, completed_statements, total_statements FROM schema_migrations ORDER BY version');
+        $metadata = ['columns'=>[], 'engines'=>[]];
+        foreach (['users','drivers'] as $table) {
+            $metadata['columns'][$table] = $this->rows('SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME=:table ORDER BY ORDINAL_POSITION', ['db'=>$this->target,'table'=>$table]);
+            $metadata['engines'][$table] = $this->rows('SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=:db AND TABLE_NAME=:table', ['db'=>$this->target,'table'=>$table])[0]['ENGINE'] ?? null;
+        }
+        $metadata['indexes'] = $this->rows("SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=:db AND TABLE_NAME IN ('users','drivers') ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX", ['db'=>$this->target]);
+        $metadata['link_foreign_keys'] = $this->rows("SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.DELETE_RULE, r.UPDATE_RULE FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.TABLE_SCHEMA=:db AND k.TABLE_NAME='drivers' AND (k.COLUMN_NAME='user_id' OR k.CONSTRAINT_NAME='fk_drivers_user')", ['db'=>$this->target]);
+        $metadata['roles'] = $this->rows('SELECT name, description FROM roles ORDER BY name');
+        $this->lastSafetyDetail = Migration010DriverValidator::partialState($metadata);
+        Migration010DriverValidator::assertLedger($ledger, $postflight);
+        $this->lastSafetyCheck = 'MIGRATION_010_SQL_CHECKSUM';
+        MigrationPlan::load(include010: true);
+        $this->lastSafetyCheck = 'MIGRATION_010_SCHEMA';
+        Migration010DriverValidator::assertSchema($metadata, $postflight);
+        // Reuse previous schema postconditions, including username format and unique index.
+        $this->status();
+        return ['status'=>'PASS','mode'=>$postflight ? 'postflight' : 'preflight','database'=>$this->target,
+            'uuid'=>DriverDatabaseIdentity::UUID,'checksum'=>MigrationPlan::DRIVER010['sha256'],
+            'statement_count'=>3,'automatic_retry_allowed'=>false];
+    }
+
     /** SELECT-only inspection used by the Task 05D-7C CLI. */
     public function vehicle005Preflight(): array
     {

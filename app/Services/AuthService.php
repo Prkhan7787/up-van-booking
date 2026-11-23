@@ -23,11 +23,12 @@ final class AuthService
         $this->dummyHash = $hasher->dummyHash();
     }
 
-    public function login(string $identifier, string $password, string $sourceAddress): AuthenticatedPrincipal
+    public function login(string $identifier, string $password, string $sourceAddress, ?string $requiredRole = null): AuthenticatedPrincipal
     {
+        if ($requiredRole !== null && !in_array($requiredRole, ['driver'], true)) throw new \InvalidArgumentException('Unsupported login role constraint.');
         $normalized = UsernamePolicy::normalize($identifier);
         $state = null;
-        $result = $this->rateLimiter->attempt($normalized, $sourceAddress, function () use ($identifier, $normalized, $password, &$state): bool {
+        $result = $this->rateLimiter->attempt($normalized, $sourceAddress, function () use ($identifier, $normalized, $password, $requiredRole, &$state): bool {
             $account = UsernamePolicy::isValid($identifier) ? $this->repository->findLoginAccount($normalized) : null;
             $verified = $account?->verify($password, $this->hasher, $this->dummyHash)
                 ?? $this->hasher->verify($password, $this->dummyHash);
@@ -36,6 +37,7 @@ final class AuthService
 
             $candidate = $this->repository->loadAuthState($account->id);
             if ($candidate === null || !$candidate->active || $candidate->userId !== $account->id) return false;
+            if ($requiredRole !== null && $candidate->roles !== [$requiredRole]) return false;
 
             if ($account->requiresRehash($this->hasher) && PasswordPolicy::isValidForSetting($password)) {
                 $this->repository->replacePasswordHash($account->id, $this->hasher->hash($password));

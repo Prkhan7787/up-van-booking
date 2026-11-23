@@ -19,7 +19,7 @@ final class UiFoundationService
     public function adminUserManagementOptions(): array
     {
         return [
-            'roles'=>array_map(static fn(string $key,string $label): array=>['value'=>$key,'label'=>$key.' — '.$label],array_keys(RoleLabels::ALL),array_values(RoleLabels::ALL)),
+            'roles'=>array_map(static fn(string $key): array=>['value'=>$key,'label'=>$key.' — '.RoleLabels::label($key)],AdminUserManagementService::ROLES),
         ];
     }
 

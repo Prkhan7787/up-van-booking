@@ -8,6 +8,7 @@ final class MigrationPlan
     public const VEHICLE007=['version'=>'007_vehicle_fuel_details','file'=>'database/drafts/007_vehicle_fuel_details.sql','kind'=>'forward_test','sha256'=>'0622c9006ae5be29c583082618e3ec2ef130bd44f39d8373038634d8cc6b03e8','objects'=>[]];
     public const BOOKING008=['version'=>'008_partial_a4_request_snapshot','file'=>'database/drafts/008_partial_a4_request_snapshot.sql','kind'=>'forward_test','sha256'=>'33b6ecc03325835b1908271fa9086afdc63a4a488b18824758f12b15b5015233','objects'=>[]];
     public const BOOKING009=['version'=>'009_booking_soft_delete','file'=>'database/proposals/009_booking_soft_delete.sql','kind'=>'forward_test','sha256'=>'6320a509931878c13aac4fd07836a852d8759ac0a3df8f61ea2ae0cdedfc501d','objects'=>[]];
+    public const DRIVER010=['version'=>'010_driver_auth','file'=>'database/drafts/010_driver_auth.sql','kind'=>'forward_test','sha256'=>'1e06a518ecb4454b5a22fb2bed61cebbe8339964a1ff0e432744b3a0dfeb300d','objects'=>[]];
     private const PINNED = [
         '001_identity' => ['database/migrations/001_identity.sql','a8afc40e4e422b640caf40289dc92734f71f2bcb26f3141ccd8f7b81257464d8',4,'ddl',['roles','users','user_roles','audit_logs']],
         '002_booking_design' => ['database/migrations/002_booking_design.sql','298e8702b4c0480797bb3fd926e80374491abba7768560f8002cbc858be946aa',10,'ddl',['vehicles','drivers','booking_requests','booking_passengers','booking_reviews','approval_decisions','vehicle_assignments','booking_notifications','booking_status_history','calendar_events']],
@@ -16,15 +17,17 @@ final class MigrationPlan
         '005_vehicle_registration_only' => ['database/drafts/005_vehicle_registration_only.sql','4a6cf9274da4b60543b67004b35b4a46cd816195c9dfb6f5aa361b503d578ae6',1,'forward_test',[]],
     ];
 
-    public static function load(bool $include006=false,bool $include007=false,bool $include008=false,bool $include009=false): array
+    public static function load(bool $include006=false,bool $include007=false,bool $include008=false,bool $include009=false,bool $include010=false): array
     {
         $root = dirname(__DIR__, 2);
         $manifest = require $root . '/database/manifest.php';
+        if($include010)$include009=true;
         if($include009)$include008=true;
         if($include006 || $include007 || $include008)$manifest[]=self::VEHICLE006;
         if($include007 || $include008)$manifest[]=self::VEHICLE007;
         if($include008)$manifest[]=self::BOOKING008;
         if($include009)$manifest[]=self::BOOKING009;
+        if($include010)$manifest[]=self::DRIVER010;
         $plan = [];
         $seen = [];
         foreach ($manifest as $entry) {
@@ -41,6 +44,7 @@ final class MigrationPlan
         }
         $versions=array_keys(self::PINNED);if($include006 || $include007 || $include008)$versions[]=self::VEHICLE006['version'];if($include007 || $include008)$versions[]=self::VEHICLE007['version'];if($include008)$versions[]=self::BOOKING008['version'];
         if($include009)$versions[]=self::BOOKING009['version'];
+        if($include010)$versions[]=self::DRIVER010['version'];
         if (array_keys($seen) !== $versions) throw new SafetyException('Migration sequence is incomplete or out of order.');
         return $plan;
     }
@@ -57,6 +61,15 @@ final class MigrationPlan
 
     public static function assertStatementAllowed(string $version, string $kind, string $statement): void
     {
+        if($version===self::DRIVER010['version'] && $kind==='forward_test') {
+            $allowed = [
+                'ALTER TABLE users MODIFY COLUMN email VARCHAR(254) NULL, ADD COLUMN nickname VARCHAR(80) NULL AFTER display_name',
+                'ALTER TABLE drivers ADD COLUMN user_id BIGINT UNSIGNED NULL AFTER contact_phone, ADD UNIQUE KEY uq_drivers_user_id (user_id), ADD CONSTRAINT fk_drivers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT',
+                "INSERT INTO roles (name, description) VALUES ('driver', 'พนักงานขับรถ')",
+            ];
+            if (!in_array(preg_replace('/\\s+/', ' ', trim($statement)), $allowed, true)) throw new SafetyException('Migration 010 exact SQL rejected.');
+            return;
+        }
         if($version===self::BOOKING009['version'] && $kind==='forward_test') {
             $sql=preg_replace('/\s+/',' ',trim($statement));
             $expected='ALTER TABLE booking_requests ADD COLUMN deleted_at DATETIME(6) NULL, ADD COLUMN deleted_by BIGINT UNSIGNED NULL, ADD COLUMN deletion_reason VARCHAR(100) NULL, ADD CONSTRAINT fk_booking_deleted_by FOREIGN KEY (deleted_by) REFERENCES users(id), ADD CONSTRAINT chk_booking_deleted_fields CHECK ( (deleted_at IS NULL AND deleted_by IS NULL AND deletion_reason IS NULL) OR (deleted_at IS NOT NULL AND deleted_by IS NOT NULL AND deletion_reason IS NOT NULL AND CHAR_LENGTH(TRIM(deletion_reason)) > 0) )';
@@ -108,8 +121,24 @@ final class MigrationPlan
         return array_map(static fn(array $m): array => ['version'=>$m['version'], 'file'=>$m['file'], 'sha256'=>$m['sha256'], 'statements'=>count($m['statements']), 'objects'=>$m['objects']], self::load($include006,$include007,$include008));
     }
 
+    /** Pinned ledger contract, without reading SQL. Execution/preflight must also call load(). */
+    public static function driver010LedgerEntries(): array
+    {
+        $entries = require dirname(__DIR__, 2).'/database/manifest.php';
+        $entries = [...$entries, self::VEHICLE006, self::VEHICLE007, self::BOOKING008, self::BOOKING009, self::DRIVER010];
+        $expected = [...array_keys(self::PINNED), self::VEHICLE006['version'], self::VEHICLE007['version'], self::BOOKING008['version'], self::BOOKING009['version'], self::DRIVER010['version']];
+        if (array_column($entries, 'version') !== $expected) throw new SafetyException('Migration ledger sequence rejected.');
+        foreach ($entries as &$entry) {
+            self::assertManifestEntry($entry);
+            $entry['statement_count'] = self::pin($entry['version'])[2];
+        }
+        unset($entry);
+        return $entries;
+    }
+
     private static function pin(string $version): ?array
     {
+        if($version===self::DRIVER010['version'])return [self::DRIVER010['file'],self::DRIVER010['sha256'],3,'forward_test',[]];
         if($version===self::BOOKING009['version'])return [self::BOOKING009['file'],self::BOOKING009['sha256'],1,'forward_test',[]];
         if($version===self::VEHICLE006['version'])return [self::VEHICLE006['file'],self::VEHICLE006['sha256'],2,'forward_test',[]];
         if($version===self::VEHICLE007['version'])return [self::VEHICLE007['file'],self::VEHICLE007['sha256'],1,'forward_test',[]];

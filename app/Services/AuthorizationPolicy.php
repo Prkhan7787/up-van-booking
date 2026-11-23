@@ -31,7 +31,9 @@ final class AuthorizationPolicy
         'assignment.create' => ['vehicle_officer'],
         'vehicles.manage' => ['vehicle_officer'],
         'vehicles.admin' => ['admin'],
-        'drivers.manage' => ['vehicle_officer'],
+        'drivers.manage' => ['vehicle_officer', 'admin'],
+        'driver.dashboard.view' => ['driver'],
+        'driver.schedule.view' => ['driver'],
         'calendar.view' => ['requester', 'vehicle_officer', 'approver', 'admin'],
         'booking.pending.view' => ['approver'],
         'booking.decision' => ['approver', 'admin'],
@@ -47,7 +49,7 @@ final class AuthorizationPolicy
         $allowedRoles = self::PERMISSIONS[$permission] ?? null;
         if ($allowedRoles === null) return false;
         foreach ($roles as $role) {
-            if (!in_array($role, ['requester', 'vehicle_officer', 'approver', 'admin'], true)) continue;
+            if (!in_array($role, ['requester', 'vehicle_officer', 'approver', 'admin', 'driver'], true)) continue;
             if (in_array($role, $allowedRoles, true)) return true;
         }
         return false;

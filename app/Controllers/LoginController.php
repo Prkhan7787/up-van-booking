@@ -16,7 +16,7 @@ final class LoginController
     public function show(?\App\Models\AuthenticatedPrincipal $principal = null): void
     {
         if ($principal !== null) { header('Location: /', true, 303); return; }
-        View::render('auth/login', ['testAuthEnabled'=>AuthFeature::testExecutionEnabled()]);
+        View::render('auth/login', ['testAuthEnabled'=>AuthFeature::testExecutionEnabled(),'driverRegistrationNotice'=>($_GET['driver_registered'] ?? null)==='1']);
     }
 
     public function login(): void

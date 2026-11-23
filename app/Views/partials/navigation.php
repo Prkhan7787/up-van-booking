@@ -14,6 +14,10 @@ $navigationPolicy = new App\Services\AuthorizationPolicy();
             <?php if ($navigationAuthenticated): ?>
                 <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'home' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/">หน้าแรก</a>
                 <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'dashboard' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/dashboard">ภาพรวม</a>
+                <?php if ($navigationPolicy->allows($navigationRoles, 'driver.dashboard.view')): ?>
+                    <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'driver-dashboard' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/driver/dashboard">ภาพรวมพนักงานขับรถ</a>
+                    <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'driver-schedule' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/driver/schedule">ตารางงานของฉัน</a>
+                <?php endif; ?>
                 <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'my-requests' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/my/booking-requests">คำร้องของฉัน</a>
                 <?php if ($navigationPolicy->allows($navigationRoles, 'calendar.view')): ?>
                     <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'booking-calendar' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/bookings/calendar">ขอใช้รถ</a>
@@ -29,6 +33,9 @@ $navigationPolicy = new App\Services\AuthorizationPolicy();
                 <?php endif; ?>
                 <?php if ($navigationPolicy->allows($navigationRoles, 'vehicles.admin')): ?>
                     <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'admin-vehicles' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/admin/vehicles">จัดการรถตู้</a>
+                <?php endif; ?>
+                <?php if ($navigationPolicy->allows($navigationRoles, 'drivers.manage')): ?>
+                    <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'driver-links' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/admin/driver-account-links">ผูกบัญชีคนขับ</a>
                 <?php endif; ?>
                 <?php if ($navigationPolicy->allows($navigationRoles, 'logs.view')): ?>
                     <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'system-logs' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/admin/system-logs">System Log</a>

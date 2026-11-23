@@ -15,13 +15,13 @@ use App\Repositories\PdoLoginRateLimitStore;
 final class AuthServiceFactory
 {
     /** Creates an explicitly gated Test DB runtime; this task never invokes it against MySQL. */
-    public static function createTestRuntime(): AuthRuntime
+    public static function createTestRuntime(bool $driver = false): AuthRuntime
     {
         if (!AuthFeature::testExecutionEnabled()) throw new \RuntimeException('Test authentication execution is not approved.');
         $hmacSecret = Env::get('AUTH_RATE_LIMIT_HMAC_KEY');
         if (strlen($hmacSecret) < 32) throw new \RuntimeException('Authentication rate-limit key is not configured.');
 
-        $db = ConnectionFactory::connect('auth_test');
+        $db = $driver ? ConnectionFactory::connect('driver_auth_test') : ConnectionFactory::connect('auth_test');
         if ((string)$db->query('SELECT DATABASE()')->fetchColumn() !== 'up_van_booking_test'
             || (string)$db->query('SELECT CURRENT_USER()')->fetchColumn() !== 'up_van_auth_test@127.0.0.1') {
             throw new \RuntimeException('Test authentication database identity mismatch.');

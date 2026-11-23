@@ -10,7 +10,7 @@ use Throwable;
 /** MySQL row locks serialize verification and count failed credentials only. */
 final class PdoLoginRateLimitStore implements LoginRateLimitStore
 {
-    public function __construct(private readonly PDO $db)
+    public function __construct(private readonly PDO $db, private readonly bool $countSuccessfulAttempts = false)
     {
         if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql'
             || $db->getAttribute(PDO::ATTR_ERRMODE) !== PDO::ERRMODE_EXCEPTION
@@ -58,7 +58,7 @@ final class PdoLoginRateLimitStore implements LoginRateLimitStore
 
             $authenticated = $authenticate();
             if (!is_bool($authenticated)) throw new \UnexpectedValueException('Authentication callback must return a boolean.');
-            if (!$authenticated) {
+            if ($this->countSuccessfulAttempts || !$authenticated) {
                 foreach ($states as [$bucket, $started, $attempts]) {
                     $update->execute(['started'=>$started,'attempts'=>$attempts + 1,'scope'=>$bucket['scope'],'digest'=>$bucket['digest']]);
                 }

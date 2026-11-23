@@ -49,20 +49,21 @@ try {
             App\Core\View::render('auth/unavailable', ['pageTitle'=>'ยังไม่เปิดใช้ Authentication', 'message'=>'Test Authentication ถูกปิดอยู่ คำขอนี้ไม่ได้เชื่อมต่อฐานข้อมูล']);
             return;
         }
-        $runtime = App\Services\AuthServiceFactory::createTestRuntime();
+        $driverRoute = in_array($controller, [App\Controllers\DriverScheduleController::class, App\Controllers\DriverAccountLinkController::class], true);
+        $runtime = App\Services\AuthServiceFactory::createTestRuntime(driver: $driverRoute);
         $principal = $runtime->authentication->requireAuthenticated();
         if ($required !== 'authenticated') $runtime->authorization->requirePermission($principal, $required);
     }
-    $instance = $controller === App\Controllers\LoginController::class
-        ? new $controller($runtime)
-        : ($controller === App\Controllers\RequesterBookingController::class ? new $controller(null,true)
-        : ($controller === App\Controllers\BookingSubmissionController::class ? new $controller(App\Core\BookingRuntimeFeature::submissionService())
-        : ($controller === App\Controllers\OfficerBookingController::class ? new $controller(
-            App\Core\BookingRuntimeFeature::officerService(),
-            in_array($action,['detail','update'],true) ? App\Core\BookingRuntimeFeature::officerEditService() : null,
-            in_array($action,['index','delete'],true) ? App\Core\BookingRuntimeFeature::officerDeleteService() : null
-        ) : new $controller())));
-    if ($controller === App\Controllers\BookingCalendarController::class || $controller === App\Controllers\RequesterBookingController::class || $controller === App\Controllers\BookingSubmissionController::class || $controller === App\Controllers\OfficerBookingController::class || $controller === App\Controllers\BookingApprovalController::class || $controller === App\Controllers\AdminVehicleController::class || $controller === App\Controllers\SystemLogController::class || $controller === App\Controllers\FormPreviewController::class || $action === 'dashboard' || $controller === App\Controllers\HomeController::class || ($controller === App\Controllers\LoginController::class && $action === 'show') || ($controller === App\Controllers\AdminUserManagementController::class && in_array($action,['index','submit'],true))) $instance->$action($principal);
+    if ($controller === App\Controllers\LoginController::class) $instance = new $controller($runtime);
+    elseif ($controller === App\Controllers\RequesterBookingController::class) $instance = new $controller(null,true);
+    elseif ($controller === App\Controllers\BookingSubmissionController::class) $instance = new $controller(App\Core\BookingRuntimeFeature::submissionService());
+    elseif ($controller === App\Controllers\OfficerBookingController::class) $instance = new $controller(
+        App\Core\BookingRuntimeFeature::officerService(),
+        in_array($action,['detail','update'],true) ? App\Core\BookingRuntimeFeature::officerEditService() : null,
+        in_array($action,['index','delete'],true) ? App\Core\BookingRuntimeFeature::officerDeleteService() : null
+    );
+    else $instance = new $controller();
+    if ($controller === App\Controllers\BookingCalendarController::class || $controller === App\Controllers\RequesterBookingController::class || $controller === App\Controllers\BookingSubmissionController::class || $controller === App\Controllers\OfficerBookingController::class || $controller === App\Controllers\BookingApprovalController::class || $controller === App\Controllers\AdminVehicleController::class || $controller === App\Controllers\SystemLogController::class || $controller === App\Controllers\FormPreviewController::class || $controller === App\Controllers\DriverScheduleController::class || $controller === App\Controllers\DriverAccountLinkController::class || $action === 'dashboard' || $controller === App\Controllers\HomeController::class || ($controller === App\Controllers\LoginController::class && $action === 'show') || ($controller === App\Controllers\AdminUserManagementController::class && in_array($action,['index','submit'],true))) $instance->$action($principal);
     else $instance->$action();
 } catch (App\Core\AuthenticationRequiredException) {
     header('Location: /login', true, 303);

@@ -191,7 +191,7 @@ for ($i = 0; $i < 20; $i++) if ($boundaryLimiter->attempt('person'.$i, '203.0.11
 authCheck($ipAccepted === 20 && !$boundaryLimiter->attempt('another-person', '203.0.113.8', static fn(): bool => false, 3020)->allowed, 'Source policy accepts twenty failures and denies the twenty-first');
 $atomicSource = file_get_contents(dirname(__DIR__) . '/app/Repositories/PdoLoginRateLimitStore.php');
 authCheck(is_string($atomicSource) && str_contains($atomicSource, 'beginTransaction()') && str_contains($atomicSource, 'FOR UPDATE') && str_contains($atomicSource, 'INSERT IGNORE') && str_contains($atomicSource, 'rollBack()'), 'PDO rate-limit adapter uses transactional row locking and rollback');
-authCheck(is_string($atomicSource) && str_contains($atomicSource, 'usort($buckets') && str_contains($atomicSource, 'if (!$authenticated)') && !str_contains($atomicSource, '->query('), 'Rate-limit adapter serializes deterministically and increments failed attempts only');
+authCheck(is_string($atomicSource) && str_contains($atomicSource, 'usort($buckets') && str_contains($atomicSource, 'bool $countSuccessfulAttempts = false') && str_contains($atomicSource, 'if ($this->countSuccessfulAttempts || !$authenticated)') && !str_contains($atomicSource, '->query('), 'Rate-limit adapter serializes deterministically and defaults to counting failed Login attempts only');
 
 $safeErrorRecord = ErrorReporter::safeRecord(str_repeat('a', 24));
 authCheck(!str_contains($safeErrorRecord, 'password') && !str_contains($safeErrorRecord, 'DSN') && str_contains($safeErrorRecord, 'correlation_id'), 'Error record contains only a correlation ID');

@@ -4,7 +4,7 @@ namespace App\Models;
 
 final class AuthState
 {
-    private const ROLES = ['requester', 'vehicle_officer', 'approver', 'admin'];
+    private const ROLES = ['requester', 'vehicle_officer', 'approver', 'admin', 'driver'];
 
     /** @param list<string> $roles */
     public function __construct(

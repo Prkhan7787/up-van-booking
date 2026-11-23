@@ -17,6 +17,7 @@ final class LoginRateLimiter
         private readonly int $windowSeconds = self::WINDOW_SECONDS,
         private readonly int $usernameLimit = self::USERNAME_LIMIT,
         private readonly int $sourceLimit = self::SOURCE_LIMIT,
+        private readonly string $namespace = '',
     ) {
         if (strlen($hmacSecret) < 32 || $windowSeconds < 1 || $usernameLimit < 1 || $sourceLimit < 1) {
             throw new \InvalidArgumentException('Login rate-limit policy is incomplete.');
@@ -36,7 +37,7 @@ final class LoginRateLimiter
 
     private function digest(string $scope, string $value): string
     {
-        return hash_hmac('sha256', $scope . ':' . $value, $this->hmacSecret, true);
+        return hash_hmac('sha256', ($this->namespace === '' ? '' : $this->namespace . ':') . $scope . ':' . $value, $this->hmacSecret, true);
     }
 
     public static function normalizeIdentifier(string $identifier): string

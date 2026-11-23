@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/assets/sweetalert2.min.css">
     <script src="/assets/sweetalert2.min.js" defer></script>
     <script src="/assets/app.js" defer></script>
+    <script src="/assets/login.js" defer></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900" data-auth-error="<?= !empty($error) ? 'invalid' : '' ?>">
 <main class="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-4 py-10 sm:px-6">
@@ -31,13 +32,39 @@
         <section class="p-6 sm:p-10 lg:p-12" aria-labelledby="login-title">
             <div class="mx-auto max-w-md">
                 <h2 id="login-title" class="text-2xl font-black">เข้าสู่ระบบ</h2>
-                <p class="mt-2 text-sm text-slate-600">ใช้ชื่อผู้ใช้ (Username) ที่ผู้ดูแลระบบจัดเตรียมให้</p>
+                <p class="mt-2 text-sm text-slate-600">เลือกวิธีเข้าสู่ระบบตามประเภทบัญชี</p>
+                <div class="mt-6">
+                    <button type="button" data-login-notice="microsoft" class="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 hover:border-up hover:text-up focus:outline-none focus:ring-2 focus:ring-up-200">
+                        เข้าสู่ระบบด้วย Microsoft 365
+                    </button>
+                    <p class="mt-2 text-xs leading-5 text-slate-500">สำหรับบุคลากรมหาวิทยาลัย — ยังไม่เชื่อมต่อระบบ Microsoft 365</p>
+                </div>
+                <section class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" aria-labelledby="driver-login-title">
+                    <h3 id="driver-login-title" class="font-bold text-up">พนักงานขับรถ</h3>
+                    <p class="mt-1 text-sm leading-6 text-slate-600">เข้าสู่ระบบด้วยเบอร์โทรศัพท์และรหัสผ่าน</p>
+                    <?php if (empty($testAuthEnabled)): ?><div role="status" class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-slate-700">ระบบยืนยันตัวตนบนฐานทดสอบยังปิดอยู่ จึงยังไม่สามารถเข้าสู่ระบบพนักงานขับรถได้</div><?php endif; ?>
+                    <form class="mt-4 space-y-4" action="/driver/login" method="post" aria-label="เข้าสู่ระบบพนักงานขับรถ">
+                        <input type="hidden" name="_token" value="<?= e(App\Core\Csrf::token()) ?>">
+                        <div>
+                            <label for="driver-phone" class="mb-2 block text-sm font-semibold">เบอร์โทรศัพท์</label>
+                            <input id="driver-phone" name="phone" type="tel" autocomplete="tel" required maxlength="20" <?= empty($testAuthEnabled) ? 'disabled' : '' ?> class="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-slate-700 focus:border-up focus:outline-none focus:ring-2 focus:ring-up-200 disabled:cursor-not-allowed disabled:bg-slate-100" placeholder="เบอร์โทรศัพท์">
+                        </div>
+                        <div>
+                            <label for="driver-password" class="mb-2 block text-sm font-semibold">รหัสผ่าน</label>
+                            <input id="driver-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" <?= empty($testAuthEnabled) ? 'disabled' : '' ?> class="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-slate-700 focus:border-up focus:outline-none focus:ring-2 focus:ring-up-200 disabled:cursor-not-allowed disabled:bg-slate-100" placeholder="รหัสผ่าน">
+                        </div>
+                        <button type="submit" <?= empty($testAuthEnabled) ? 'disabled' : '' ?> class="min-h-12 w-full rounded-xl bg-up px-5 py-3 font-bold text-white hover:bg-up-900 focus:outline-none focus:ring-2 focus:ring-gold focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">เข้าสู่ระบบพนักงานขับรถ</button>
+                    </form>
+                    <a href="/driver/register" class="mt-3 inline-flex min-h-11 items-center font-semibold text-up underline decoration-up-300 underline-offset-4 hover:text-up-900 focus:outline-none focus:ring-2 focus:ring-up-200" aria-describedby="driver-login-title">สมัครสมาชิกพนักงานขับรถ</a>
+                </section>
+                <?php if (!empty($driverRegistrationNotice)): ?><p role="status" class="mt-4 rounded-xl border border-up-200 bg-up-50 p-4 text-sm text-up">หากบัญชีนี้ยังไม่เคยสมัคร สามารถลองเข้าสู่ระบบด้วยเบอร์โทรศัพท์ได้ทันที หากยังเข้าไม่ได้ กรุณาติดต่อผู้ดูแล</p><?php endif; ?>
                 <?php if (!empty($error)): ?><div role="alert" class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><?= e($error) ?></div><?php endif; ?>
                 <div role="status" class="mt-6 rounded-xl border border-up-200 border-l-4 border-l-gold bg-up-50 p-4 text-sm leading-6 text-slate-800">
                     <strong class="block text-up"><?= !empty($testAuthEnabled) ? 'บัญชีทดสอบภายใน' : 'ระบบเข้าสู่ระบบยังปิดอยู่' ?></strong>
-                    <span><?= !empty($testAuthEnabled) ? 'เข้าสู่ระบบด้วยบัญชีทดสอบที่ผู้ดูแล provision ไว้' : 'ยังไม่มีการเชื่อมต่อฐานข้อมูลหรือบันทึกข้อมูลบัญชีในขั้นตอนนี้' ?></span>
+                    <span><?= !empty($testAuthEnabled) ? 'เข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่านของบัญชีทดสอบหรือผู้ดูแลที่ provision ไว้' : 'การเข้าสู่ระบบบัญชีทดสอบและผู้ดูแลยังปิดอยู่' ?></span>
                 </div>
-                <form class="mt-7 space-y-5" action="/login" method="post">
+                <form class="mt-5 space-y-5" action="/login" method="post" aria-label="เข้าสู่ระบบบัญชีทดสอบและผู้ดูแล">
+                    <p class="text-sm font-bold text-slate-700">บัญชีทดสอบและผู้ดูแลระบบ</p>
                     <input type="hidden" name="_token" value="<?= e(App\Core\Csrf::token()) ?>">
                     <div>
                         <label for="username" class="mb-2 block text-sm font-semibold">ชื่อผู้ใช้</label>

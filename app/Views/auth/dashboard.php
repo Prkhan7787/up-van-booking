@@ -12,4 +12,11 @@
             </ul>
         <?php endif; ?>
     </div>
+    <?php if (in_array('driver', $roles, true)): ?>
+    <div class="mt-6 rounded-xl border border-up-200 bg-up-50 p-4">
+        <h2 class="font-bold text-up">พื้นที่พนักงานขับรถ</h2>
+        <p class="mt-1 text-sm text-slate-700">ดูเฉพาะงานที่ผูกกับบัญชีนี้</p>
+        <a href="/driver/schedule" class="mt-3 inline-flex min-h-11 items-center rounded-lg bg-up px-4 py-2 font-semibold text-white">เปิดตารางงานของฉัน</a>
+    </div>
+    <?php endif; ?>
 </section>
