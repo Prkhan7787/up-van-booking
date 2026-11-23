@@ -1,0 +1,171 @@
+/* Document geometry follows the supplied raster reference; no Tailwind preflight. */
+:root { color-scheme: light; --ink-blue: #1547a0; --up-primary: #512D6D; --up-gold: #D4AF37; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #e5e5e5; color: #000; }
+.preview-tools, .prototype-notice, .print-warning { font: 14px/1.6 Tahoma, sans-serif; }
+.preview-tools { padding: 12px 20px; background: #fff; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
+.preview-tools a, .preview-tools button { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; color: var(--up-primary); border: 1px solid var(--up-primary); background: #fff; border-radius: 6px; cursor: pointer; text-decoration: none; }
+.preview-tools a:hover, .preview-tools button:hover { background: #f8f5fa; }
+.preview-tools summary { min-height: 44px; padding: 8px 12px; cursor: pointer; color: var(--up-primary); }
+.preview-tools details { max-width: 100%; }
+.preview-tools details[open] a { margin: 4px; }
+.preview-tools [aria-current] { border: 2px solid var(--up-primary); box-shadow: inset 0 -2px 0 var(--up-gold); font-weight: bold; }
+.preview-mode-note { flex: 1 0 100%; text-align: center; color: var(--up-primary); font: 12px/1.4 Tahoma, sans-serif; }
+.prototype-notice, .print-warning { margin: 12px auto; padding: 0 16px; max-width: 1000px; text-align: center; }
+.print-warning { color: #8a1900; }
+.paper-viewport { width: 100%; overflow-x: auto; padding: 10px 0 30px; }
+.paper { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 3mm 10mm 8mm 14.8mm; background: #fff; box-shadow: 0 2px 10px #0003; font-family: 'TH Sarabun New', 'TH SarabunPSK', 'Angsana New', serif; font-size: 15pt; line-height: 1; }
+.paper p, .paper h1, .paper h2 { margin: 0; }
+.paper h1 { font-size: 20.2pt; line-height: 1.15; font-weight: bold; text-align: center; white-space: nowrap; }
+.paper h2 { font-size: inherit; line-height: 5.7mm; font-weight: bold; text-decoration: underline; }
+.document-header { height: 20.8mm; position: relative; }
+.document-number { position: absolute; right: .5mm; top: 8.5mm; display: flex; align-items: center; gap: .45mm; width: 30.5mm; min-height: 9mm; border: .25mm solid #000; padding: .8mm 1mm; font-size: 14pt; white-space: nowrap; }
+.document-number-label { flex: 0 0 auto; white-space: nowrap; }
+.document-number .field.document-number-input { flex: 1 1 8mm; min-width: 5mm; align-items: center; min-height: 6mm; }
+.document-number .field.document-number-input input { height: 6mm; line-height: 6mm; }
+.document-number-divider { flex: 0 0 auto; white-space: nowrap; }
+.travel-options { display: flex; gap: 18mm; align-items: center; padding: 6mm 0 0 14mm; }
+.travel-options label { display: flex; gap: 4mm; align-items: center; white-space: nowrap; cursor: pointer; }
+input.square, input.circle, span.circle { appearance: none; -webkit-appearance: none; border: .25mm solid #000; background: #fff; padding: 0; margin: 0; flex: 0 0 auto; position: relative; }
+input.square { width: 6.75mm; height: 5.8mm; }
+input.circle, span.circle { width: 7.3mm; height: 4.3mm; border-radius: 50%; display: inline-block; }
+input:checked::after, .circle.checked::after { content: ''; position: absolute; inset: 1mm; background: var(--ink-blue); }
+.circle:checked::after, .circle.checked::after { border-radius: 50%; }
+.main-table { display: grid; grid-template-columns: 51.4% 48.6%; width: 183.4mm; border: .25mm solid #000; min-height: 149mm; }
+.requester-section { padding: .6mm 2mm 0; border-right: .25mm solid #000; min-width: 0; }
+.officer-approval-column { min-width: 0; }
+.line { display: flex; align-items: baseline; min-height: 6.5mm; white-space: nowrap; min-width: 0; }
+.field, .document-output { display: inline-flex; position: relative; flex: 1 1 0; min-width: 0; min-height: 4.8mm; border-bottom: .2mm dotted #000; vertical-align: baseline; }
+.field { align-items: center; }
+.document-output { align-items: baseline; }
+.field input { display: block; width: 100%; min-width: 0; height: 4.8mm; padding: 0 1px; border: 0; border-radius: 0; outline-offset: 1px; font-family: inherit; font-size: 15pt; line-height: 4.8mm; background: transparent; color: var(--ink-blue); caret-color: var(--ink-blue); }
+.destination-line { white-space: normal; align-items: flex-end; }
+.destination-field { align-self: stretch; align-items: flex-end; padding-bottom: .35mm; }
+.field textarea { display: block; position: relative; z-index: 1; pointer-events: auto; cursor: text; width: 100%; min-width: 0; min-height: 4.8mm; height: 4.8mm; padding: 0 1px .2mm; border: 0; border-radius: 0; outline-offset: 1px; resize: none; overflow-x: auto; overflow-y: hidden; white-space: pre; overflow-wrap: normal; word-break: normal; font-family: inherit; font-size: 15pt; line-height: 4.8mm; background: transparent; color: var(--ink-blue); caret-color: var(--ink-blue); }
+.field textarea:focus-visible { outline: none; }
+.destination-field .print-value { white-space: nowrap; overflow: hidden; overflow-wrap: normal; word-break: normal; text-overflow: clip; }
+.field .print-value { display: none; width: 100%; color: var(--ink-blue); white-space: normal; overflow-wrap: anywhere; word-break: normal; font-size: 15pt; line-height: 4.8mm; }
+.document-output { padding: 0 1px; white-space: normal; overflow-wrap: anywhere; line-height: 4.8mm; color: var(--ink-blue); }
+.field:focus-within { background: #f1f1f1; outline: 1px solid #555; }
+.field input:focus-visible { outline: none; }
+/* The officer form reports validation in the dialog. Keep native invalid styling off the A4 controls. */
+#booking-forward :is(input, textarea):invalid { box-shadow: none; }
+.field.day, .document-output.day { flex: 0 0 10mm; }
+.application-date .field.day { flex-basis: 13.5mm; }
+.field:has(#requester_position) { flex: 0 0 32mm; }
+.field.month, .document-output.month { flex: 1 1 17mm; }
+.field.year, .document-output.year { flex: 0 0 16mm; }
+.field.time { flex: 0 0 21mm; }
+.field.count { flex: 0 0 27mm; }
+.field.phone { flex: 0 0 50mm; }
+.recipient { margin: 3mm 0 4mm !important; min-height: 6.5mm; }
+.indent { padding-left: 9mm; }
+.expenses { padding: 0; border: 0; margin: 4mm 0 0; min-width: 0; }
+.expenses legend { padding: 0; font-weight: bold; min-height: 6.5mm; }
+.expense-line { display: flex; min-height: 6.3mm; gap: 1mm; align-items: baseline; white-space: nowrap; }
+.expense-line label { display: inline-flex; gap: 1mm; align-items: baseline; cursor: pointer; }
+.expense-line > input, .expense-line label input { align-self: center; }
+.requester-signature { margin-top: 9mm; }
+.requester-signature .indent { padding-left: 13mm; }
+.name-line { padding-left: 19mm; padding-right: 23mm; }
+.requester-phone { padding-right: 12mm; margin-top: 0; }
+.officer-section { min-height: 67.7mm; border-bottom: .25mm solid #000; padding: .6mm 2mm 0; }
+.officer-copy { min-height: 6.5mm; padding-left: 9mm; }
+.officer-signature { margin-top: 9mm; text-align: center; padding: 0 7mm 0 20mm; }
+.officer-signature > p { white-space: nowrap; margin-left: 6mm; min-height: 6.5mm; text-align: left; }
+.officer-signature .line:first-child { padding-left: 5mm; }
+.officer-signature .line:nth-child(2) { padding-left: 11mm; }
+.officer-signature .signature-date { padding-left: 7mm; }
+.officer-signature .signature-date .document-output { flex-basis: 8mm; }
+.officer-signature .signature-date .document-output.year { flex-basis: 12mm; }
+.signature-date { justify-content: center; gap: 1mm; }
+.signature-date .year { flex-basis: 10mm; }
+.approval-section { min-height: 80.7mm; padding: .6mm 2mm 0; }
+.decision-line { display: flex; gap: 3.7mm; align-items: baseline; min-height: 8.5mm; white-space: nowrap; }
+.decision-line .circle { align-self: center; width: 7.6mm; }
+.decision-line .document-output { margin-left: -3.7mm; }
+.reason-continuation { margin-left: 12mm; }
+.approval-signature { margin: 14mm 3mm 0 22mm; }
+.approval-signature .line:nth-child(2) { margin-left: -3mm; }
+.approval-signature .line { justify-content: center; }
+.driver-section { margin-top: 4.2mm; }
+.driver-section h2 { text-decoration: none; min-height: 7.5mm; }
+.driver-table { display: grid; grid-template-columns: 51.4% 48.6%; width: 185.3mm; border: .25mm solid #000; min-height: 25.5mm; }
+.driver-table > div { padding: 0 2mm; min-width: 0; }
+.driver-acknowledgement { border-right: .25mm solid #000; }
+.driver-table p { min-height: 6.5mm; }
+.driver-signature { margin-top: 5mm; }
+.driver-table .name-line { padding-left: 8mm; padding-right: 28mm; }
+.return-date { margin-top: 3mm; }
+.driver-return .document-output.day { flex-basis: 12mm; }
+.driver-return .document-output.year { flex-basis: 18mm; }
+.driver-return .field.day { flex-basis: 12mm; }
+.driver-return .field.year { flex-basis: 18mm; }
+.document-output.return-time { flex: 0 0 42mm; }
+.field.return-time { flex: 0 0 42mm; }
+.notes-section { margin-top: 5mm; }
+.notes-section h2 { line-height: 7mm; }
+.notes-section .line { min-height: 7mm; width: 175mm; }
+.notes-section .field.phone { flex-basis: 54mm; }
+.notes-section .field.day { flex-basis: 10mm; }
+.notes-section .field.month { flex: 0 0 23mm; }
+.notes-section .field.year { flex-basis: 17mm; }
+.notes-section .field.time { flex-basis: 23mm; }
+.attachment-note { font-weight: bold; font-size: 13pt; line-height: 5mm; margin-top: 0 !important; }
+.document-reminders { margin-top: 7mm; font-size: 13pt; line-height: 5.7mm; }
+.document-reminders h2 { font-weight: normal; font-size: 14pt; }
+.document-reminders ol { margin: 0; padding-left: 15mm; }
+.document-reminders li { padding-left: 0; }
+:focus-visible { outline: 2px solid var(--up-primary); outline-offset: 2px; }
+.booking-submit-tools { width: min(210mm, calc(100% - 24px)); margin: 18px auto 36px; padding: 0 0 18px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.booking-submit-button { display: inline-flex; width: auto; max-width: 100%; min-width: min(300px, 100%); min-height: 50px; align-items: center; justify-content: center; border: 0; border-radius: 12px; padding: 12px 24px; background: #4c1d95; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.booking-submit-button:hover:not(:disabled) { background: #3b1577; }
+.booking-submit-button:disabled { background: #6d28d9; color: #fff; opacity: .58; cursor: not-allowed; }
+.booking-submit-note { margin: 8px 2px 0; color: #475569; font-size: 14px; line-height: 1.5; }
+/* The decision row shares the paper width and horizontal scroll container. */
+:is(#booking-director-decision,#booking-notify-requester) { width: 210mm; margin: 14px auto 0; padding: 0; align-items: flex-end; }
+.director-decision-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+.director-decision-buttons .booking-submit-button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px clamp(8px, 2vw, 16px);
+    font: 700 14px/1.4 Tahoma, sans-serif;
+    background: var(--decision-color);
+    white-space: nowrap;
+}
+.director-draft-buttons { --decision-color: #4c1d95; --decision-hover: #3b1577; }
+.director-decision-buttons + .director-draft-buttons { margin-top: 10px; }
+.director-decision-buttons [data-publish-decision] { --decision-color: #4c1d95; --decision-hover: #3b1577; }
+.owner-pending-result { color: #475569; }
+.decision-diagnostic { width: min(210mm, calc(100% - 24px)); margin: 10px auto; padding: 12px; border: 1px solid #f59e0b; border-radius: 8px; background: #fffbeb; color: #422006; font: 13px/1.45 system-ui, sans-serif; text-align: left; }
+.decision-diagnostic dl { display: grid; grid-template-columns: minmax(160px, auto) 1fr; gap: 3px 12px; margin: 8px 0 0; }
+.decision-diagnostic dt { font-weight: 700; }
+.decision-diagnostic dd { margin: 0; overflow-wrap: anywhere; }
+.director-decision-buttons .booking-submit-button:hover:not(:disabled) { background: var(--decision-hover); }
+@media (max-width: 800px) {
+    :is(#booking-director-decision,#booking-notify-requester) { margin-inline: 12px; }
+}
+.officer-request-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; width: min(210mm, calc(100% - 24px)); margin: 12px auto; padding: 12px 16px; border: 1px solid #ddd6fe; border-radius: 12px; background: #fff; color: #334155; font-size: 14px; }
+.officer-request-meta strong { color: #4c1d95; }
+@media (max-width: 800px) { .paper { margin-left: 12px; margin-right: 12px; } }
+@page { size: A4 portrait; margin: 0; }
+@media print {
+    body { background: #fff; }
+    .preview-tools, .prototype-notice, .print-warning, .booking-submit-tools, .officer-request-meta, .decision-diagnostic { display: none !important; }
+    .paper-viewport { padding: 0; overflow: visible; }
+    .paper { margin: 0; box-shadow: none; width: 210mm; min-height: 297mm; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .field input, .field textarea { display: none; }
+    .field .print-value { display: block; white-space: normal; overflow-wrap: anywhere; line-height: 4.8mm; min-height: 4.8mm; }
+    .field input.overflowing + .print-value { line-height: 6.5mm; }
+    .section3-uncommitted .print-value { visibility: hidden; }
+    .section3-uncommitted input:checked::after { display: none; }
+    .field:focus-within { background: transparent; outline: none; }
+    .line, .expense-line, .decision-line { white-space: normal; }
+    .field, .document-output { break-inside: avoid; }
+    .destination-field .print-value { white-space: nowrap; overflow: hidden; text-overflow: clip; }
+    .driver-table, .document-reminders { break-inside: avoid; }
+    .document-header { break-inside: avoid; }
+}
+@media screen {
+    #booking-forward [aria-invalid="true"] { outline: 2px solid #b42318; outline-offset: -1px; }
+}

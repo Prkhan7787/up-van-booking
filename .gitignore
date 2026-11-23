@@ -1,0 +1,50 @@
+# Local credentials and recovery state
+.env
+.env.*
+!.env.example
+.env.auth-recovery-state.json
+.env.auth-recovery.lock
+*รหัส*.txt
+
+# Installed runtimes and dependencies
+node_modules/
+.runtime/
+.npm-cache/
+vendor/
+
+# Local runtime data, logs, cache, locks and temporary output
+storage/logs/*
+storage/sessions/*
+storage/cache/*
+storage/*.log
+storage/*.lock
+tmp/
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.dump
+*.sql.gz
+*.pem
+*.key
+*.p12
+*.pfx
+*.zip
+
+# Generated or live diagnostics; screenshots/docs source remain independently trackable
+/artifacts/
+/tests/artifacts/
+
+# Local editor/OS files
+.idea/
+.vscode/
+Thumbs.db
+
+tests/auth-account-provisioning-static.ps1
+tests/auth-credential-recovery-env-review.ps1
+tests/auth-credential-recovery-static.ps1
+
+# Workspace-local agent skills and recovery staging
+/.agents/
+/.env.recovery-staging/

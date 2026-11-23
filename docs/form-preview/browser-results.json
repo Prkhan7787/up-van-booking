@@ -1,0 +1,414 @@
+{
+  "status": "passed",
+  "inkBlue": "rgb(21, 71, 160)",
+  "viewportChecks": [
+    {
+      "width": 1920,
+      "height": 1080,
+      "example": "blank",
+      "paperWidth": 793.6875,
+      "paperLeft": 563.15625,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "example": "requester",
+      "paperWidth": 793.6875,
+      "paperLeft": 563.15625,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 1366,
+      "height": 768,
+      "example": "blank",
+      "paperWidth": 793.6875,
+      "paperLeft": 286.15625,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 1366,
+      "height": 768,
+      "example": "requester",
+      "paperWidth": 793.6875,
+      "paperLeft": 286.15625,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "example": "blank",
+      "paperWidth": 793.6875,
+      "paperLeft": 12,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "example": "requester",
+      "paperWidth": 793.6875,
+      "paperLeft": 12,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 360,
+      "height": 800,
+      "example": "blank",
+      "paperWidth": 793.6875,
+      "paperLeft": 12,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    },
+    {
+      "width": 360,
+      "height": 800,
+      "example": "requester",
+      "paperWidth": 793.6875,
+      "paperLeft": 12,
+      "fieldsInside": true,
+      "mainWidth": 693.15625,
+      "driverWidth": 700.34375
+    }
+  ],
+  "normalPdfPages": 1,
+  "pdfPagePoints": [
+    594.95996,
+    841.91998
+  ],
+  "printFieldDriftPx": 1,
+  "metrics": {
+    ".main-table": {
+      "x": 55.921875,
+      "y": 89.9375,
+      "width": 693.15625,
+      "height": 565
+    },
+    ".requester-section": {
+      "x": 56.921875,
+      "y": 90.9375,
+      "width": 355.25,
+      "height": 563
+    },
+    ".officer-section": {
+      "x": 412.171875,
+      "y": 90.9375,
+      "width": 335.890625,
+      "height": 255.859375
+    },
+    ".approval-section": {
+      "x": 412.171875,
+      "y": 346.796875,
+      "width": 335.890625,
+      "height": 305
+    },
+    ".driver-table": {
+      "x": 55.921875,
+      "y": 699.140625,
+      "width": 700.34375,
+      "height": 96.375
+    },
+    ".notes-section": {
+      "x": 55.921875,
+      "y": 814.40625,
+      "width": 699.984375,
+      "height": 151.15625
+    },
+    ".document-reminders": {
+      "x": 55.921875,
+      "y": 992.015625,
+      "width": 699.984375,
+      "height": 86.1875
+    }
+  },
+  "fields": [
+    {
+      "name": "application_day",
+      "label": "วันที่ยื่นคำขอ วันที่",
+      "x": 88.171875,
+      "y": 116.171875,
+      "width": 51.015625,
+      "height": 18.140625
+    },
+    {
+      "name": "application_month",
+      "label": "วันที่ยื่นคำขอ เดือน",
+      "x": 167.21875,
+      "y": 116.171875,
+      "width": 152.65625,
+      "height": 18.140625
+    },
+    {
+      "name": "application_year",
+      "label": "วันที่ยื่นคำขอ พ.ศ.",
+      "x": 343.15625,
+      "y": 116.171875,
+      "width": 60.46875,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_name",
+      "label": "ชื่อผู้ขอใช้รถ",
+      "x": 120.515625,
+      "y": 191.734375,
+      "width": 283.109375,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_position",
+      "label": "ตำแหน่ง",
+      "x": 108.96875,
+      "y": 216.296875,
+      "width": 120.9375,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_affiliation",
+      "label": "สังกัด",
+      "x": 258.953125,
+      "y": 216.296875,
+      "width": 144.671875,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_affiliation_continued",
+      "label": "สังกัด ต่อบรรทัด",
+      "x": 64.46875,
+      "y": 240.859375,
+      "width": 202.8125,
+      "height": 18.140625
+    },
+    {
+      "name": "destination",
+      "label": "สถานที่เดินทาง",
+      "x": 115.890625,
+      "y": 265.421875,
+      "width": 287.734375,
+      "height": 18.140625
+    },
+    {
+      "name": "purpose",
+      "label": "วัตถุประสงค์",
+      "x": 85.21875,
+      "y": 289.984375,
+      "width": 318.40625,
+      "height": 18.140625
+    },
+    {
+      "name": "passenger_count",
+      "label": "จำนวนผู้เดินทาง",
+      "x": 103.015625,
+      "y": 314.546875,
+      "width": 102.046875,
+      "height": 18.140625
+    },
+    {
+      "name": "departure_date",
+      "label": "วันที่ออกเดินทาง",
+      "x": 101.421875,
+      "y": 339.109375,
+      "width": 186.890625,
+      "height": 18.140625
+    },
+    {
+      "name": "departure_time",
+      "label": "เวลาออกเดินทาง",
+      "x": 312.625,
+      "y": 339.109375,
+      "width": 79.359375,
+      "height": 18.140625
+    },
+    {
+      "name": "return_date",
+      "label": "วันที่กลับ",
+      "x": 101.609375,
+      "y": 363.671875,
+      "width": 186.703125,
+      "height": 18.140625
+    },
+    {
+      "name": "return_time",
+      "label": "เวลากลับ",
+      "x": 312.625,
+      "y": 363.671875,
+      "width": 79.359375,
+      "height": 18.140625
+    },
+    {
+      "name": "project_expense_details",
+      "label": "รายละเอียดงบประมาณโครงการ",
+      "x": 270.046875,
+      "y": 451.703125,
+      "width": 133.578125,
+      "height": 18.140625
+    },
+    {
+      "name": "expense_source_details",
+      "label": "รายละเอียดค่าใช้จ่ายเพิ่มเติม",
+      "x": 64.46875,
+      "y": 521.671875,
+      "width": 339.15625,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_signature",
+      "label": "ช่องลงชื่อผู้ขอ (ชื่อพิมพ์ต้นแบบ ไม่ใช่ลายเซ็นอิเล็กทรอนิกส์)",
+      "x": 142.4375,
+      "y": 581.671875,
+      "width": 171.765625,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_printed_name",
+      "label": "ชื่อผู้ขอในวงเล็บ",
+      "x": 140.078125,
+      "y": 606.234375,
+      "width": 172.8125,
+      "height": 18.140625
+    },
+    {
+      "name": "requester_phone",
+      "label": "เบอร์โทรศัพท์ผู้ขอ",
+      "x": 111.0625,
+      "y": 630.796875,
+      "width": 247.21875,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_person_name",
+      "label": "ชื่อผู้ที่จะไปรับ",
+      "x": 130.40625,
+      "y": 842.28125,
+      "width": 310.84375,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_person_phone",
+      "label": "เบอร์โทรศัพท์ผู้ที่จะไปรับ",
+      "x": 513.234375,
+      "y": 842.28125,
+      "width": 204.09375,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_location",
+      "label": "สถานที่รับ",
+      "x": 109.421875,
+      "y": 868.734375,
+      "width": 221.0625,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_day",
+      "label": "วันรับ วันที่",
+      "x": 354.1875,
+      "y": 868.734375,
+      "width": 37.78125,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_month",
+      "label": "วันรับ เดือน",
+      "x": 420,
+      "y": 868.734375,
+      "width": 86.921875,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_year",
+      "label": "วันรับ พ.ศ.",
+      "x": 530.203125,
+      "y": 868.734375,
+      "width": 64.25,
+      "height": 18.140625
+    },
+    {
+      "name": "pickup_time",
+      "label": "เวลารับ",
+      "x": 618.765625,
+      "y": 868.734375,
+      "width": 86.921875,
+      "height": 18.140625
+    },
+    {
+      "name": "dropoff_location",
+      "label": "สถานที่ส่ง",
+      "x": 107.921875,
+      "y": 895.1875,
+      "width": 222.5625,
+      "height": 18.140625
+    },
+    {
+      "name": "dropoff_day",
+      "label": "วันส่ง วันที่",
+      "x": 354.1875,
+      "y": 895.1875,
+      "width": 37.78125,
+      "height": 18.140625
+    },
+    {
+      "name": "dropoff_month",
+      "label": "วันส่ง เดือน",
+      "x": 420,
+      "y": 895.1875,
+      "width": 86.921875,
+      "height": 18.140625
+    },
+    {
+      "name": "dropoff_year",
+      "label": "วันส่ง พ.ศ.",
+      "x": 530.203125,
+      "y": 895.1875,
+      "width": 64.25,
+      "height": 18.140625
+    },
+    {
+      "name": "dropoff_time",
+      "label": "เวลาส่ง",
+      "x": 618.765625,
+      "y": 895.1875,
+      "width": 86.921875,
+      "height": 18.140625
+    },
+    {
+      "name": "coordinator_name",
+      "label": "ชื่อผู้ประสานงาน",
+      "x": 123.375,
+      "y": 921.640625,
+      "width": 317.875,
+      "height": 18.140625
+    },
+    {
+      "name": "coordinator_phone",
+      "label": "เบอร์โทรศัพท์ผู้ประสานงาน",
+      "x": 513.234375,
+      "y": 921.640625,
+      "width": 204.09375,
+      "height": 18.140625
+    }
+  ],
+  "mobile": {
+    "width": 793.6875,
+    "client": 390,
+    "scroll": 818
+  },
+  "longPrint": {
+    "text": "ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ข้อความยาวสำหรับทดสอบ ",
+    "height": 319.3125,
+    "scroll": 320,
+    "client": 319
+  },
+  "browserErrors": []
+}

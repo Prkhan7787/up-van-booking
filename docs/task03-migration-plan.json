@@ -1,0 +1,43 @@
+{
+    "mode": "offline-plan",
+    "database": "up_van_booking",
+    "plan": [
+        {
+            "version": "001_identity",
+            "file": "database\/migrations\/001_identity.sql",
+            "sha256": "a8afc40e4e422b640caf40289dc92734f71f2bcb26f3141ccd8f7b81257464d8",
+            "statements": 4,
+            "objects": [
+                "roles",
+                "users",
+                "user_roles",
+                "audit_logs"
+            ]
+        },
+        {
+            "version": "002_booking_design",
+            "file": "database\/migrations\/002_booking_design.sql",
+            "sha256": "298e8702b4c0480797bb3fd926e80374491abba7768560f8002cbc858be946aa",
+            "statements": 10,
+            "objects": [
+                "vehicles",
+                "drivers",
+                "booking_requests",
+                "booking_passengers",
+                "booking_reviews",
+                "approval_decisions",
+                "vehicle_assignments",
+                "booking_notifications",
+                "booking_status_history",
+                "calendar_events"
+            ]
+        },
+        {
+            "version": "003_roles",
+            "file": "database\/seeds\/003_roles.sql",
+            "sha256": "43e89c65e36df2aa401182f2fefb6fa13289f7a3e9bbde32062057cb5b4495f2",
+            "statements": 1,
+            "objects": []
+        }
+    ]
+}

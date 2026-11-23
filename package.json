@@ -1,0 +1,15 @@
+{
+  "name": "up-van-booking",
+  "private": true,
+  "scripts": {
+    "build": "tailwindcss -i resources/css/app.css -o public/assets/app.css --minify && node scripts/copy-assets.cjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.18",
+    "playwright-core": "^1.56.1",
+    "tailwindcss": "4.1.18"
+  },
+  "dependencies": {
+    "sweetalert2": "11.26.17"
+  }
+}
