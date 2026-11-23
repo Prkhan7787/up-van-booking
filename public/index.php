@@ -5,11 +5,14 @@ try {
     header('Content-Type: text/html; charset=UTF-8');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
-    $mapPage=($_SERVER['REQUEST_METHOD'] ?? 'GET')==='GET' && parse_url($_SERVER['REQUEST_URI'] ?? '/',PHP_URL_PATH)==='/bookings/travel-estimate';
+    $requestPath=parse_url($_SERVER['REQUEST_URI'] ?? '/',PHP_URL_PATH);
+    $mapPage=($_SERVER['REQUEST_METHOD'] ?? 'GET')==='GET' && in_array($requestPath,['/bookings/travel-estimate','/bookings/calendar'],true);
+    $calculationPage=$requestPath==='/bookings/travel-estimate';
     if($mapPage){
         $nonce=base64_encode(random_bytes(18));$_SERVER['TRAVEL_MAP_NONCE']=$nonce;
         header('Referrer-Policy: strict-origin-when-cross-origin');
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}' 'strict-dynamic'; style-src 'self' 'nonce-{$nonce}' https://unpkg.com; img-src 'self' https://tile.openstreetmap.org https://unpkg.com data: blob:; connect-src 'self' https://photon.komoot.io https://router.project-osrm.org; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+        $mapConnectSources=$calculationPage ? "'self' https://photon.komoot.io https://router.project-osrm.org" : "'self' https://photon.komoot.io";
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}' 'strict-dynamic'; style-src 'self' 'nonce-{$nonce}' https://unpkg.com; img-src 'self' https://tile.openstreetmap.org https://unpkg.com data: blob:; connect-src {$mapConnectSources}; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     }else header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     header('Cache-Control: no-store');
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';

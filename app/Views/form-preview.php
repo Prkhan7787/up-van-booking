@@ -92,7 +92,7 @@ $vehicleLabel = trim(implode(' ', [
     <?php if (!empty($formPermissions['previewNotice'])): ?><span class="preview-mode-note" role="status"><?= e((string)$formPermissions['previewNotice']) ?></span><?php endif; ?>
 </nav>
 <?php if (($transferError ?? null)!==null): ?>
-<p class="prototype-notice" role="alert"><?= e($transferError) ?> · ไม่มีการบันทึกหรือส่งคำขอ</p>
+<p class="prototype-notice border border-red-300 bg-red-50 text-red-900" role="alert"><?= e($transferError) ?> · ไม่มีการบันทึกหรือส่งคำขอ</p>
 <?php endif; ?>
 <?php endif; ?>
 <p id="print-warning" class="print-warning" role="alert" hidden>ข้อความบางช่องยาวเกินพื้นที่ ระบบย่อได้ต่ำสุด 12.5px หากยังไม่พอดี โปรดปรับข้อความให้กระชับก่อนพิมพ์ ระบบจะไม่ตัดข้อมูลที่กรอกทิ้ง</p>

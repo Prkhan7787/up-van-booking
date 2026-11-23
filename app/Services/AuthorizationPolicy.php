@@ -12,7 +12,7 @@ final class AuthorizationPolicy
         'form.vehicle_fields.edit' => ['requester', 'vehicle_officer'],
         'form.section3.edit' => ['approver'],
         'workspace.view' => ['requester', 'vehicle_officer', 'approver', 'admin'],
-        'travel_estimate.view' => ['requester', 'admin'],
+        'travel_estimate.view' => ['admin'],
         'booking.draft.create' => ['requester'],
         'booking.draft.update_own' => ['requester'],
         'booking.submit_own' => ['requester', 'vehicle_officer', 'admin', 'approver'],

@@ -18,6 +18,9 @@ $navigationPolicy = new App\Services\AuthorizationPolicy();
                 <?php if ($navigationPolicy->allows($navigationRoles, 'calendar.view')): ?>
                     <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'booking-calendar' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/bookings/calendar">ขอใช้รถ</a>
                 <?php endif; ?>
+                <?php if ($navigationPolicy->allows($navigationRoles, 'travel_estimate.view')): ?>
+                    <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'travel-estimate' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/bookings/travel-estimate">แผนที่และคำนวณค่าเดินทาง</a>
+                <?php endif; ?>
                 <?php if ($navigationPolicy->allows($navigationRoles, 'booking.director_queue.view')): ?>
                     <a class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-semibold <?= ($activeNav ?? '') === 'director-approval' ? 'bg-up text-white' : 'text-slate-700 hover:bg-slate-100' ?>" href="/director/approval-requests">คำร้องรออนุมัติ</a>
                 <?php endif; ?>

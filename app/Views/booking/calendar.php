@@ -56,6 +56,13 @@ $monthUrl=static fn(string $value):string=>'/bookings/calendar?'.http_build_quer
         </div>
         <p class="mt-3 text-xs leading-5 text-slate-600">สถานะคำร้องอ้างอิง Workflow ล่าสุด อนุมัติแล้วไม่ได้หมายถึงจัดรถหรือคนขับแล้ว ข้อมูลจัดรถแสดงแยกต่างหาก การตรวจรถว่างและเวลาซ้อนใช้กฎเดิม</p>
         <?php if ($error!==null): ?><p role="alert" class="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><?= e($error) ?></p><?php endif; ?>
+        <form action="/form-preview" method="get" data-booking-form-link data-calendar-today="<?= e($today) ?>" data-booking-can-submit="<?= $canPrepareForm ? 'true' : 'false' ?>" class="mt-5">
+        <?php if ($vehicleId!==null): ?><input type="hidden" name="vehicle_id" value="<?= e((string)$vehicleId) ?>"><?php endif; ?>
+        <input type="hidden" name="start" value="" data-booking-start>
+        <input type="hidden" name="end" value="" data-booking-end>
+        <section id="availability-form" class="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
+        <h2 class="text-xl font-bold text-up">จองรถตู้</h2>
+        <p class="mt-1 text-sm leading-6 text-slate-600">เลือกวันและเวลาเดินทาง เพื่อไปสู่แบบฟอร์มยื่นคำขอ</p>
         <?php if ($days!==[]): ?>
         <div class="mt-5 rounded-2xl border-2 border-up bg-white p-2 sm:p-4">
         <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-600 sm:gap-1.5" aria-hidden="true"><?php foreach (['อา','จ','อ','พ','พฤ','ศ','ส'] as $weekday): ?><span class="py-2"><?= e($weekday) ?></span><?php endforeach; ?></div>
@@ -66,13 +73,14 @@ $monthUrl=static fn(string $value):string=>'/bookings/calendar?'.http_build_quer
                 $isPast=$day['date']<$today;
                 $description='';
                 if($isPast)$description.=' · วันที่ผ่านมาแล้ว ไม่สามารถเลือกจองได้';
-                $dayColor=$isPast ? 'cursor-not-allowed border-slate-300 bg-slate-200 text-slate-500' : 'border-slate-200 bg-white text-slate-700 hover:border-up-300';
+                $dayColor=$isPast ? 'cursor-not-allowed border-slate-300 bg-slate-300 text-slate-600' : 'border-slate-200 bg-white text-slate-700 hover:border-up-300';
+                $dayNumberClass=$isPast ? 'font-medium text-slate-500' : '';
                 $selectedDay=!$isPast && $dates['start_date']!=='' && $dates['end_date']!=='' && $day['date']>=$dates['start_date'] && $day['date']<=$dates['end_date'];
                 $params=['month'=>$month,'start_date'=>$day['date'],'end_date'=>$day['date'],'start_time'=>$dates['start_time'],'end_time'=>$dates['end_time']];
                 if ($vehicleId!==null) $params['vehicle_id']=$vehicleId;
             ?>
-            <a data-calendar-day="<?= e($day['date']) ?>" data-calendar-today="<?= e($today) ?>" <?php if (!$isPast): ?>href="<?= e('/bookings/calendar?'.http_build_query($params).'#availability-form') ?>"<?php else: ?>aria-disabled="true" tabindex="-1"<?php endif; ?> class="flex min-h-[72px] min-w-0 flex-col rounded-xl border p-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-up sm:min-h-[80px] sm:p-1.5 <?= $day['date']===$today ? 'ring-2 ring-up ring-offset-2 ' : '' ?><?= $selectedDay ? 'border-2 border-amber-500 ' : '' ?><?= e($dayColor) ?>" aria-current="<?= $day['date']===$today ? 'date' : 'false' ?>" aria-label="<?= e($day['date'].' '.$description.($selectedDay?' วันที่เลือก':'')) ?>">
-                <strong class="text-xs leading-4 sm:text-sm"><?= e((string)(int)substr($day['date'],-2)) ?></strong>
+            <a role="link" data-calendar-day="<?= e($day['date']) ?>" data-calendar-today="<?= e($today) ?>" <?php if (!$isPast): ?>href="<?= e('/bookings/calendar?'.http_build_query($params).'#availability-form') ?>"<?php else: ?>aria-disabled="true" tabindex="-1"<?php endif; ?> class="flex min-h-[72px] min-w-0 flex-col rounded-xl border p-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-up sm:min-h-[80px] sm:p-1.5 <?= $day['date']===$today ? 'ring-2 ring-up ring-offset-2 ' : '' ?><?= $selectedDay ? 'border-2 border-amber-500 ' : '' ?><?= e($dayColor) ?>" aria-current="<?= $day['date']===$today ? 'date' : 'false' ?>" aria-label="<?= e($day['date'].' '.$description.($selectedDay?' วันที่เลือก':'')) ?>">
+                <strong class="text-xs leading-4 sm:text-sm <?= e($dayNumberClass) ?>"><?= e((string)(int)substr($day['date'],-2)) ?></strong>
                 <?php foreach ($day['requests'] ?? [] as $request): ?>
                 <?php [$label,$dot]=\App\Modules\Booking\OfficerBookingDisplay::status($request['workflow_status']); ?>
                 <span data-calendar-request="<?= e((string)$request['booking_id']) ?>" class="mt-1 flex min-w-0 items-start gap-1 text-[11px] leading-4" style="overflow-wrap:anywhere"><span aria-hidden="true" class="mt-1 size-2 shrink-0 rounded-full <?= e($dot) ?>"></span><span><?= e($label) ?></span></span>
@@ -82,19 +90,8 @@ $monthUrl=static fn(string $value):string=>'/bookings/calendar?'.http_build_quer
             <?php endforeach; ?>
         </div>
         </div>
-        <p class="mt-4 text-xs leading-5 text-slate-600">การเลือกวันและผลตรวจยังไม่ใช่การจองหรือการอนุมัติ ผลอาจเปลี่ยนเมื่อมีการจัดรถใหม่</p>
         <?php endif; ?>
-    </div>
-</section>
-
-<section id="availability-form" class="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
-    <h2 class="text-xl font-bold text-up">จองรถตู้</h2>
-    <p class="mt-1 text-sm leading-6 text-slate-600">เลือกวันและเวลาเดินทาง เพื่อไปสู่แบบฟอร์มยื่นคำขอ</p>
-    <form action="/bookings/travel-estimate" method="get" data-booking-form-link data-calendar-today="<?= e($today) ?>" data-booking-can-submit="<?= $canPrepareForm ? 'true' : 'false' ?>" class="mt-5">
-        <?php if ($vehicleId!==null): ?><input type="hidden" name="vehicle_id" value="<?= e((string)$vehicleId) ?>"><?php endif; ?>
-        <input type="hidden" name="start" value="" data-booking-start>
-        <input type="hidden" name="end" value="" data-booking-end>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label class="text-sm font-semibold">วันเริ่ม<div class="mt-2"><input type="text" name="start_date_display" value="<?= e($toDisplayDate($dates['start_date'])) ?>" placeholder="วว/ดด/ปปปป" inputmode="numeric" autocomplete="off" required pattern="\d{2}/\d{2}/\d{4}" data-date-display class="min-h-12 w-full rounded-xl border border-slate-300 bg-white p-3 text-base focus:border-up focus:outline-none focus:ring-2 focus:ring-up-200"><input type="hidden" name="start_date" value="<?= e($toIsoDate($dates['start_date'])) ?>" data-date-value><input type="date" min="<?= e($today) ?>" value="<?= e($toIsoDate($dates['start_date'])) ?>" data-date-picker tabindex="-1" aria-hidden="true" class="sr-only"></div></label>
         <label class="text-sm font-semibold">เวลาเริ่ม<div class="mt-2"><input type="text" name="start_time_display" value="<?= e($toTime($dates['start_time'])) ?>" placeholder="08:00" inputmode="numeric" autocomplete="off" required pattern="(?:[01]\d|2[0-3]):[0-5]\d" data-time-display class="min-h-12 w-full rounded-xl border border-slate-300 bg-white p-3 text-base focus:border-up focus:outline-none focus:ring-2 focus:ring-up-200"><input type="hidden" name="start_time" value="<?= e($toTime($dates['start_time'])) ?>" data-time-value><input type="time" value="<?= e($toTime($dates['start_time'])) ?>" data-time-picker tabindex="-1" aria-hidden="true" class="sr-only"></div></label>
         <label class="text-sm font-semibold">วันสิ้นสุด<div class="mt-2"><input type="text" name="end_date_display" value="<?= e($toDisplayDate($dates['end_date'])) ?>" placeholder="วว/ดด/ปปปป" inputmode="numeric" autocomplete="off" required pattern="\d{2}/\d{2}/\d{4}" data-date-display class="min-h-12 w-full rounded-xl border border-slate-300 bg-white p-3 text-base focus:border-up focus:outline-none focus:ring-2 focus:ring-up-200"><input type="hidden" name="end_date" value="<?= e($toIsoDate($dates['end_date'])) ?>" data-date-value><input type="date" min="<?= e(max($today,$toIsoDate($dates['start_date']))) ?>" value="<?= e($toIsoDate($dates['end_date'])) ?>" data-date-picker tabindex="-1" aria-hidden="true" class="sr-only"></div></label>
@@ -102,9 +99,38 @@ $monthUrl=static fn(string $value):string=>'/bookings/calendar?'.http_build_quer
         </div>
         <p data-booking-selection-error role="alert" hidden class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900"></p>
         <p data-booking-advance-warning role="status" hidden class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">ตามเงื่อนไขการขอใช้รถ ควรยื่นคำขอล่วงหน้าอย่างน้อย 5 วันทำการ หากเป็นกรณีเร่งด่วนหรือฉุกเฉิน สามารถยื่นคำขอต่อได้ โดยขึ้นอยู่กับการพิจารณาของเจ้าหน้าที่ <span class="block text-xs">คำเตือนเบื้องต้นนับเฉพาะวันจันทร์–ศุกร์ วันหยุดราชการและข้อยกเว้นยังรอยืนยัน</span></p>
-        <button type="submit" data-booking-submit disabled class="mt-5 inline-flex h-[50px] min-h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-up px-3 font-bold leading-tight text-sm text-white hover:bg-up-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-up sm:px-4 sm:text-base disabled:cursor-not-allowed disabled:bg-slate-400"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" style="display:block;width:20px;height:20px;min-width:20px;min-height:20px;max-width:20px;max-height:20px;flex:0 0 20px;color:currentColor;fill:none;stroke:currentColor" class="shrink-0" stroke-width="1.8"><path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20V6.5Z"/><path d="M8.5 4v13.5M15.5 6.5V20M12 10l2.5 2.5L12 15"/></svg><span class="min-w-0 text-center">ถัดไป: เลือกเส้นทางและคำนวณค่าเดินทาง</span></button>
+        <p class="mt-4 text-xs leading-5 text-slate-600">การเลือกวันและผลตรวจยังไม่ใช่การจองหรือการอนุมัติ ผลอาจเปลี่ยนเมื่อมีการจัดรถใหม่</p>
+        <div class="mt-6 grid gap-4 sm:grid-cols-2" aria-label="เลือกต้นทางและปลายทาง">
+            <div class="travel-location-card rounded-xl border border-slate-200 p-4">
+                <label for="calendar-origin-search" class="block text-sm font-bold text-slate-700">ต้นทาง</label>
+                <input id="calendar-origin-search" type="search" maxlength="160" autocomplete="off" aria-label="ค้นหาต้นทาง" aria-controls="calendar-origin-results" class="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm focus:border-up focus:ring-2 focus:ring-up-200" placeholder="ค้นหาต้นทาง" value="สถาบันนวัตกรรมการเรียนรู้ มหาวิทยาลัยพะเยา">
+                <div id="calendar-origin-results" class="travel-search-results" role="listbox" aria-label="ผลค้นหาต้นทาง" aria-live="polite" hidden></div>
+                <p id="calendar-origin-location" class="mt-2 break-words text-xs text-slate-600" aria-live="polite">พิกัด 19.031572, 99.893832</p>
+            </div>
+            <div class="travel-location-card rounded-xl border border-slate-200 p-4">
+                <label for="calendar-destination-search" class="block text-sm font-bold text-slate-700">ปลายทาง</label>
+                <input id="calendar-destination-search" type="search" maxlength="500" autocomplete="off" aria-label="ค้นหาปลายทาง" aria-controls="calendar-destination-results" class="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm focus:border-up focus:ring-2 focus:ring-up-200" placeholder="ค้นหาปลายทาง">
+                <div id="calendar-destination-results" class="travel-search-results" role="listbox" aria-label="ผลค้นหาปลายทาง" aria-live="polite" hidden></div>
+                <p id="calendar-destination-location" class="mt-2 break-words text-xs text-slate-600" aria-live="polite">ยังไม่ได้เลือกปลายทาง</p>
+            </div>
+        </div>
+        <div class="mt-4 flex flex-wrap items-end gap-3">
+            <p class="min-w-0 text-sm text-slate-600" id="calendar-map-instructions">คอมพิวเตอร์: คลิกซ้ายเลือกต้นทาง · คลิกขวาเลือกปลายทาง<br>จอสัมผัส: แตะเลือกต้นทาง · กดค้างเลือกปลายทาง</p>
+            <div class="ml-auto flex shrink-0 items-center gap-3 text-xs text-slate-600" aria-label="คำอธิบายสีหมุด"><span class="whitespace-nowrap"><i class="travel-marker-swatch travel-marker-swatch-origin" aria-hidden="true"></i>ต้นทาง</span><span class="whitespace-nowrap"><i class="travel-marker-swatch travel-marker-swatch-destination" aria-hidden="true"></i>ปลายทาง</span></div>
+        </div>
+        <div id="calendar-map" class="travel-map mt-5 w-full max-w-full overflow-hidden rounded-2xl border border-up-200 bg-up-50" role="region" aria-label="แผนที่ OpenStreetMap สำหรับเลือกต้นทางหรือปลายทาง" tabindex="0" aria-describedby="calendar-map-instructions"></div>
+        <p id="calendar-map-status" role="status" aria-live="polite" class="sr-only">กำลังโหลดแผนที่ OpenStreetMap…</p>
+        <input type="hidden" name="destination" value=""><input type="hidden" name="destination_source" value=""><input type="hidden" name="destination_lat" value=""><input type="hidden" name="destination_lng" value="">
+        <input type="hidden" name="origin" value="สถาบันนวัตกรรมการเรียนรู้ มหาวิทยาลัยพะเยา"><input type="hidden" name="origin_source" value="preset"><input type="hidden" name="origin_lat" value="19.031572"><input type="hidden" name="origin_lng" value="99.893832">
+        <button type="submit" data-booking-submit disabled class="mt-5 inline-flex h-[50px] min-h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-up px-3 font-bold leading-tight text-sm text-white hover:bg-up-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-up sm:px-4 sm:text-base disabled:cursor-not-allowed disabled:bg-slate-400"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" style="display:block;width:20px;height:20px;min-width:20px;min-height:20px;max-width:20px;max-height:20px;flex:0 0 20px;color:currentColor;fill:none;stroke:currentColor" class="shrink-0" stroke-width="1.8"><path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20V6.5Z"/><path d="M8.5 4v13.5M15.5 6.5V20M12 10l2.5 2.5L12 15"/></svg><span class="min-w-0 text-center">ถัดไป: แบบฟอร์มคำร้อง A4</span></button>
         <p data-booking-disabled-reason role="status" class="mt-2 text-sm text-slate-600"></p>
     </form>
     <p class="mt-3 text-xs leading-5 text-slate-600">กรุณาเลือกวันและเวลาที่ถูกต้อง ข้อมูลจะถูกนำไปแสดงในแบบฟอร์มโดยยังไม่ส่งคำขอ</p>
 
+        </section>
+    </div>
 </section>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" referrerpolicy="strict-origin-when-cross-origin">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer<?= isset($_SERVER['TRAVEL_MAP_NONCE']) ? ' nonce="'.e($_SERVER['TRAVEL_MAP_NONCE']).'"' : '' ?>></script>
+<script src="/assets/calendar-map.js" defer<?= isset($_SERVER['TRAVEL_MAP_NONCE']) ? ' nonce="'.e($_SERVER['TRAVEL_MAP_NONCE']).'"' : '' ?>></script>

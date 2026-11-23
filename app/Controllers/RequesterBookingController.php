@@ -9,6 +9,7 @@ use App\Modules\Booking\RequesterA4Presenter;
 use App\Modules\Booking\RequesterDraftService;
 use App\Modules\Booking\BookingCalendarWindow;
 use App\Modules\Booking\BangchakPriceFeed;
+use App\Modules\Booking\RoadRouteGeometry;
 use App\Modules\Booking\VehicleCalendarService;
 use App\Services\AuthorizationPolicy;
 use App\Services\RequesterBookingReadFactory;
@@ -19,7 +20,20 @@ use App\Core\RequesterBookingUnavailableException;
 final class RequesterBookingController
 {
     private const TRAVEL_ORIGIN='สถาบันนวัตกรรมการเรียนรู้ มหาวิทยาลัยพะเยา';
-    public function __construct(private readonly ?RequesterDraftService $drafts=null,private readonly bool $runtimeReadsEnabled=false,private readonly ?VehicleCalendarService $vehicleCalendar=null) {}
+    public function __construct(private readonly ?RequesterDraftService $drafts=null,private readonly bool $runtimeReadsEnabled=false,private readonly ?VehicleCalendarService $vehicleCalendar=null,private readonly ?RoadRouteGeometry $routeGeometry=null) {}
+    public function calendarRouteGeometry(AuthenticatedPrincipal $actor): void
+    {
+        if (!(new AuthorizationPolicy())->allows($actor->roles,'calendar.view')) throw new AuthorizationException();
+        header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: private, no-store');
+        try {
+            $geometry=($this->routeGeometry ?? new RoadRouteGeometry())->between($_GET['origin_lat']??null,$_GET['origin_lng']??null,$_GET['destination_lat']??null,$_GET['destination_lng']??null);
+            echo json_encode(['geometry'=>$geometry],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        } catch (\InvalidArgumentException) {
+            http_response_code(422);echo '{"error":"ROUTE_COORDINATES_INVALID"}';
+        } catch (\Throwable) {
+            http_response_code(503);echo '{"error":"ROAD_ROUTE_UNAVAILABLE"}';
+        }
+    }
     public function travelEstimate(AuthenticatedPrincipal $actor): void
     {
         if (!(new AuthorizationPolicy())->allows($actor->roles,'travel_estimate.view')) throw new AuthorizationException();

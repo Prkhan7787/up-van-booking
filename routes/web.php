@@ -10,6 +10,7 @@ return [
     'GET /bookings/travel-estimate' => [App\Controllers\RequesterBookingController::class, 'travelEstimate', 'travel_estimate.view'],
     'GET /bookings/travel-estimate/fuel-prices' => [App\Controllers\RequesterBookingController::class, 'fuelPrices', 'travel_estimate.view'],
     'GET /bookings/calendar' => [App\Controllers\BookingCalendarController::class, 'index', 'calendar.view'],
+    'GET /bookings/calendar/route-geometry' => [App\Controllers\RequesterBookingController::class, 'calendarRouteGeometry', 'calendar.view'],
     'GET /bookings' => [App\Controllers\RequesterBookingController::class, 'index', 'booking.view_own'],
     'GET /bookings/admin' => [App\Controllers\RequesterBookingController::class, 'adminIndex', 'booking.view_all'],
     'GET /bookings/detail' => [App\Controllers\RequesterBookingController::class, 'detail', 'workspace.view'],

@@ -33,8 +33,10 @@ final class FormPreviewController
         $examples = require dirname(__DIR__, 2) . '/resources/fixtures/form-preview.php';
         $example = $_GET['example'] ?? 'blank';
         if (!is_string($example) || !isset($examples[$example])) $example = 'blank';
-        $contextKeys=['vehicle_id','vehicle_label','vehicle_registration','start','end','origin','destination','origin_lat','origin_lng','destination_lat','destination_lng','route_outbound_m','route_return_m','route_duration_ms','route_return_duration_ms'];
+        $contextKeys=['vehicle_id','vehicle_label','vehicle_registration','start','end','origin','destination','origin_source','destination_source','origin_lat','origin_lng','destination_lat','destination_lng','route_outbound_m','route_return_m','route_duration_ms','route_return_duration_ms'];
         $hasTransfer=array_intersect($contextKeys,array_keys($_GET))!==[];
+        $hasCalculationTransfer=array_intersect(['route_outbound_m','route_return_m','route_duration_ms','route_return_duration_ms'],array_keys($_GET))!==[];
+        if($hasCalculationTransfer && !$policy->allows($actor->roles,'travel_estimate.view'))throw new AuthorizationException();
         // The one user-facing sample action points to the completed fixture.
         $exampleReadOnly=!$hasTransfer && $example==='completed';
         // Sample fixtures are for viewing/printing only; never expose a submit action or key.
@@ -51,27 +53,34 @@ final class FormPreviewController
                 $vehicleProvince=(string)($vehicle['registration_province']??'');
                 $formData=['vehicle_registration'=>$vehicleRegistration];
                 $transferContext=['vehicle_id'=>(int)$vehicleId,'vehicle_label'=>$vehicleLabel,'vehicle_registration'=>$vehicleRegistration,'vehicle_province'=>$vehicleProvince];
-                if(array_intersect(['start','end','start_date','end_date','start_time','end_time','origin_lat','destination_lat'],array_keys($_GET))!==[]) {
-                $window=BookingCalendarWindow::fromTravelQuery($_GET);
-                if(substr($window->startLocal,0,10)<(new \DateTimeImmutable('now',new \DateTimeZone('Asia/Bangkok')))->format('Y-m-d'))throw new \InvalidArgumentException('TRAVEL_DATE_IN_PAST');
-                $fuelType=$_GET['fuel_type']??'';
-                if(!is_string($fuelType) || ($fuelType!=='' && !FuelTypeCatalog::contains($fuelType)))throw new \InvalidArgumentException('FUEL_TYPE_INVALID');
-                $travelSnapshot=TravelSnapshot::preview($_GET,$fuelType);
-                if($travelSnapshot===null)throw new \InvalidArgumentException('TRAVEL_PREVIEW_INVALID');
-                $startDate=substr($window->startLocal,0,10);$endDate=substr($window->endLocal,0,10);
-                $formData=[
-                    'vehicle_registration'=>$vehicleRegistration,
-                    'destination'=>$travelSnapshot['destination'],
-                    'departure_date'=>self::thaiDate($startDate),'departure_time'=>substr($window->startLocal,11,5),
-                    'return_date'=>self::thaiDate($endDate),'return_time'=>substr($window->endLocal,11,5),
-                ];
-                $transferContext=['vehicle_id'=>(int)$vehicleId,'vehicle_label'=>$vehicleLabel,'vehicle_registration'=>$vehicleRegistration,'vehicle_province'=>$vehicleProvince,
-                    'origin'=>$travelSnapshot['origin'],'start'=>$window->startLocal,'end'=>$window->endLocal];
-                }
+                if($hasCalculationTransfer) {
+                    $window=BookingCalendarWindow::fromTravelQuery($_GET);
+                    if(substr($window->startLocal,0,10)<(new \DateTimeImmutable('now',new \DateTimeZone('Asia/Bangkok')))->format('Y-m-d'))throw new \InvalidArgumentException('TRAVEL_DATE_IN_PAST');
+                    $fuelType=$_GET['fuel_type']??'';
+                    if(!is_string($fuelType) || ($fuelType!=='' && !FuelTypeCatalog::contains($fuelType)))throw new \InvalidArgumentException('FUEL_TYPE_INVALID');
+                    $travelSnapshot=TravelSnapshot::preview($_GET,$fuelType);
+                    if($travelSnapshot===null)throw new \InvalidArgumentException('TRAVEL_PREVIEW_INVALID');
+                    $startDate=substr($window->startLocal,0,10);$endDate=substr($window->endLocal,0,10);
+                    $formData=[
+                        'vehicle_registration'=>$vehicleRegistration,
+                        'destination'=>$travelSnapshot['destination'],
+                        'departure_date'=>self::thaiDate($startDate),'departure_time'=>substr($window->startLocal,11,5),
+                        'return_date'=>self::thaiDate($endDate),'return_time'=>substr($window->endLocal,11,5),
+                    ];
+                    $transferContext=['vehicle_id'=>(int)$vehicleId,'vehicle_label'=>$vehicleLabel,'vehicle_registration'=>$vehicleRegistration,'vehicle_province'=>$vehicleProvince,
+                        'origin'=>$travelSnapshot['origin'],'start'=>$window->startLocal,'end'=>$window->endLocal];
+                } elseif(isset($_GET['start'],$_GET['end'],$_GET['origin'],$_GET['destination'],$_GET['origin_lat'],$_GET['origin_lng'],$_GET['destination_lat'],$_GET['destination_lng'])) {
+                    $window=BookingCalendarWindow::fromTravelQuery($_GET);
+                    foreach(['origin_lat'=>[-90,90],'destination_lat'=>[-90,90],'origin_lng'=>[-180,180],'destination_lng'=>[-180,180]] as $key=>[$min,$max]) { $v=$_GET[$key]; if(!is_string($v)||!is_numeric($v)||(float)$v<$min||(float)$v>$max) throw new \InvalidArgumentException('LOCATION_INVALID'); }
+                    if(substr($window->startLocal,0,10)<(new \DateTimeImmutable('now',new \DateTimeZone('Asia/Bangkok')))->format('Y-m-d'))throw new \InvalidArgumentException('CALENDAR_DATE_IN_PAST');
+                    $origin=self::transferLocation($_GET['origin'],$_GET['origin_source']??null,160); $destination=self::transferLocation($_GET['destination'],$_GET['destination_source']??null,500);
+                    $formData=['vehicle_registration'=>$vehicleRegistration,'pickup_location'=>$origin,'destination'=>$destination,'departure_date'=>self::thaiDate(substr($window->startLocal,0,10)),'departure_time'=>substr($window->startLocal,11,5),'return_date'=>self::thaiDate(substr($window->endLocal,0,10)),'return_time'=>substr($window->endLocal,11,5)];
+                    $transferContext=['vehicle_id'=>(int)$vehicleId,'vehicle_label'=>$vehicleLabel,'vehicle_registration'=>$vehicleRegistration,'vehicle_province'=>$vehicleProvince,'origin'=>$origin,'start'=>$window->startLocal,'end'=>$window->endLocal];
+                } else throw new \InvalidArgumentException('TRANSFER_SELECTION_REQUIRED');
             } catch (\InvalidArgumentException) {
-                http_response_code(422);$formData=[];$transferContext=null;$travelSnapshot=null;$transferError='ข้อมูลรถ วันเวลา หรือเส้นทางใน URL ไม่ครบหรือไม่ถูกต้อง โปรดกลับไปเลือกข้อมูลจากขั้นตอนก่อนหน้า';
+                http_response_code(422);$formData=[];$transferContext=null;$travelSnapshot=null;$transferError='ข้อมูลรถ วันเวลา หรือสถานที่ใน URL ไม่ครบหรือไม่ถูกต้อง โปรดกลับไปเลือกข้อมูลจากขั้นตอนก่อนหน้า';
             } catch (\Throwable) {
-                http_response_code(422);$formData=[];$travelSnapshot=null;$transferContext=null;$transferError='ข้อมูลประมาณการไม่ถูกต้อง โปรดกลับไปเลือกเส้นทางใหม่';
+                http_response_code(422);$formData=[];$travelSnapshot=null;$transferContext=null;$transferError='ข้อมูลรถ วันเวลา หรือสถานที่ไม่ถูกต้อง โปรดกลับไปเลือกข้อมูลใหม่';
             }
         }
         // Approval fields are fixture-owned, never URL-owned, and are omitted for roles without decision authority.
@@ -90,6 +99,15 @@ final class FormPreviewController
     {
         if(!is_string($value) || self::length($value)>$limit || ($required && trim($value)===''))throw new \InvalidArgumentException('TRAVEL_TEXT_INVALID');
         return trim($value);
+    }
+
+    private static function transferLocation(mixed $label,mixed $source,int $limit): string
+    {
+        $clean=self::text($label,$limit,false);
+        if($source===null)$source=$clean===''?'map':'named';
+        if(!is_string($source)||!in_array($source,['map','search','preset','named'],true))throw new \InvalidArgumentException('LOCATION_SOURCE_INVALID');
+        if(($source==='map'&&$clean!=='')||($source!=='map'&&$clean===''))throw new \InvalidArgumentException('LOCATION_LABEL_SOURCE_MISMATCH');
+        return $clean;
     }
 
     private static function length(string $value): int

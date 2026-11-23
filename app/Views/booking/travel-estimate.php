@@ -2,8 +2,8 @@
 $fuelReference=\App\Modules\Booking\FuelEconomyReferenceCatalog::forFuelType((string)($selectedVehicle['fuel_type']??''));
 ?>
 <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8" id="travel-estimate" data-fuel-reference="<?= e(json_encode($fuelReference,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)) ?>" data-origin-lat="19.031572" data-origin-lng="99.893832" data-origin-label="<?= e((string)$originLabel) ?>" data-fuel-type="<?= e((string)($selectedVehicle['fuel_type'] ?? '')) ?>">
-    <p class="text-sm font-bold text-up">ขั้นตอนที่ 2 จาก 3</p><h1 class="mt-2 text-2xl font-black text-up">แผนที่และคำนวณค่าเดินทาง</h1>
-    <p class="mt-2 text-sm text-slate-700">ค้นหาสถานที่หรือเลือกต้นทางและปลายทางจากแผนที่ ก่อนเข้าสู่แบบฟอร์มยื่นคำขอ</p>
+    <p class="text-sm font-bold text-up">เครื่องมือภายในสำหรับผู้ดูแลระบบ</p><h1 class="mt-2 text-2xl font-black text-up">แผนที่และคำนวณค่าเดินทาง</h1>
+    <p class="mt-2 text-sm text-slate-700">ใช้ข้อมูลคำนวณเป็นข้อมูลอ้างอิงภายในสำหรับตรวจสอบการเดินทาง</p>
     <?php if ($travelError!==null): ?><p role="alert" class="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><?= e($travelError) ?></p><?php endif; ?>
     <?php if ($selectedVehicle!==null && $selection!==null): ?><p class="mt-4 rounded-xl bg-up-50 p-4 text-sm text-up">รถที่ขอใช้: <?= e((string)$selectedVehicle['label']) ?> · <?= e((string)$selectedVehicle['registration_number']) ?><?= !empty($selectedVehicle['registration_province']) ? ' · '.e((string)$selectedVehicle['registration_province']) : '' ?> · <?= e($selection->startLocal) ?> ถึง <?= e($selection->endLocal) ?></p><?php endif; ?>
     <div class="mt-6 grid gap-4 sm:grid-cols-2" aria-label="เลือกต้นทางและปลายทาง">
