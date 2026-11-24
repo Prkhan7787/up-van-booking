@@ -158,6 +158,18 @@ function schema010(bool $post): array {
 }
 Migration010DriverValidator::assertSchema(schema010(false),false); Migration010DriverValidator::assertSchema(schema010(true),true);
 securityCheck(true,'expected 010 schema precondition and postcondition accepted');
+$baselineMetadata=schema010(false);
+$baselineVisibility=Migration010DriverValidator::metadataVisibility($baselineMetadata,false);
+securityCheck($baselineVisibility['status']==='COMPLETE' && $baselineVisibility['class']==='COMPLETE','complete baseline metadata is distinguishable from a schema failure');
+$limitedMetadata=$baselineMetadata;
+foreach(['users','drivers'] as $table)$limitedMetadata['columns'][$table]=array_values(array_filter($limitedMetadata['columns'][$table],static fn(array $c):bool=>$c['COLUMN_NAME']==='id'));
+$limitedVisibility=Migration010DriverValidator::metadataVisibility($limitedMetadata,false);
+$limitedState=Migration010DriverValidator::partialState($limitedMetadata,false);
+securityCheck($limitedVisibility['status']==='INCOMPLETE' && $limitedVisibility['class']==='COLUMN_GRANTS_LIMIT_METADATA'
+    && $limitedVisibility['reason_code']==='MIGRATION_010_METADATA_VISIBILITY_INSUFFICIENT'
+    && $limitedState['users_visible_columns']===['id'] && $limitedState['email_nullable']===null,
+    'column-scoped ID-only visibility is reported separately and never mistaken for a confirmed missing schema column');
+securityCheck(rejected(fn()=>Migration010DriverValidator::assertSchema($limitedMetadata,false)),'incomplete metadata cannot pass schema validation');
 foreach(['partial','missing_unique','wrong_fk','nullable_email','extra_role'] as $case){
     $m=schema010(true);
     if($case==='partial')array_pop($m['roles']);

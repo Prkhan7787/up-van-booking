@@ -20,7 +20,7 @@ $bad=new PDOException('SECRET_RAW');$bad->errorInfo=['invalid secret',null,'SECR
 $d=E::fromFailure($bad,999,'untrusted secret')->diagnostics();
 $check($d['sqlstate']==='UNKNOWN' && $d['statement_number']===null && $d['execution_stage']==='UNKNOWN','untrusted diagnostic labels sanitized');
 $runner=file_get_contents(dirname(__DIR__,2).'/app/Database/MigrationRunner.php');
-$check(str_contains($runner,'MigrationExecutionException::fromFailure($originalError,$statementNumber,$executionStage)'),'Runner forwards original error before it is lost');
+$check(str_contains($runner,'MigrationExecutionException::fromFailure($originalError,$statementNumber,$executionStage,$entry[\'version\'])'),'Runner forwards original error, statement, stage and migration before diagnostics are lost');
 $check(str_contains($runner,"failure_code='statement_failed'") && str_contains($runner,"status='failed'"),'ledger failure semantics unchanged');
 $cli=file_get_contents(dirname(__DIR__,2).'/bin/db-migration-006.php');
 $check(strpos($cli,'catch(App\\Database\\MigrationExecutionException')<strpos($cli,'catch(Throwable'),'CLI forwards safe structured exception before generic catch');

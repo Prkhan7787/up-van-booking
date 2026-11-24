@@ -59,9 +59,31 @@ final class MigrationRunner
     public function driver010Inspect(bool $postflight = false): array
     {
         if ($this->target !== MigrationTarget::TEST) throw new SafetyException('MIGRATION_010_TEST_ONLY');
-        DriverDatabaseIdentity::inspect($this->db, 'up_van_test_migrator');
+        DriverDatabaseIdentity::inspect($this->db, Migration010ReadOnlyGrantPlan::ACCOUNT);
         $this->lastSafetyCheck = 'MIGRATION_010_BASELINE';
         $ledger = $this->rows('SELECT version, checksum, status, completed_statements, total_statements FROM schema_migrations ORDER BY version');
+        $metadata = $this->driver010Metadata();
+        $this->lastSafetyDetail = Migration010DriverValidator::partialState($metadata,$postflight);
+        Migration010DriverValidator::assertLedger($ledger, $postflight);
+        $this->lastSafetyCheck = 'MIGRATION_010_SQL_CHECKSUM';
+        MigrationPlan::load(include010: true);
+        $this->lastSafetyCheck = 'MIGRATION_010_SCHEMA';
+        $visibility=Migration010DriverValidator::metadataVisibility($metadata,$postflight);
+        if($visibility['status']!=='COMPLETE'){
+            $this->lastSafetyCheck='MIGRATION_010_METADATA_VISIBILITY';
+            $this->lastSafetyDetail=Migration010DriverValidator::partialState($metadata,$postflight);
+            throw new SafetyException((string)$visibility['reason_code']);
+        }
+        Migration010DriverValidator::assertSchema($metadata, $postflight);
+        // Reuse previous schema postconditions, including username format and unique index.
+        $this->status();
+        return ['status'=>'PASS','mode'=>$postflight ? 'postflight' : 'preflight','database'=>$this->target,
+            'uuid'=>DriverDatabaseIdentity::UUID,'checksum'=>MigrationPlan::DRIVER010['sha256'],
+            'statement_count'=>3,'automatic_retry_allowed'=>false];
+    }
+
+    private function driver010Metadata(): array
+    {
         $metadata = ['columns'=>[], 'engines'=>[]];
         foreach (['users','drivers'] as $table) {
             $metadata['columns'][$table] = $this->rows('SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=:db AND TABLE_NAME=:table ORDER BY ORDINAL_POSITION', ['db'=>$this->target,'table'=>$table]);
@@ -70,17 +92,7 @@ final class MigrationRunner
         $metadata['indexes'] = $this->rows("SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=:db AND TABLE_NAME IN ('users','drivers') ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX", ['db'=>$this->target]);
         $metadata['link_foreign_keys'] = $this->rows("SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.DELETE_RULE, r.UPDATE_RULE FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.TABLE_SCHEMA=:db AND k.TABLE_NAME='drivers' AND (k.COLUMN_NAME='user_id' OR k.CONSTRAINT_NAME='fk_drivers_user')", ['db'=>$this->target]);
         $metadata['roles'] = $this->rows('SELECT name, description FROM roles ORDER BY name');
-        $this->lastSafetyDetail = Migration010DriverValidator::partialState($metadata);
-        Migration010DriverValidator::assertLedger($ledger, $postflight);
-        $this->lastSafetyCheck = 'MIGRATION_010_SQL_CHECKSUM';
-        MigrationPlan::load(include010: true);
-        $this->lastSafetyCheck = 'MIGRATION_010_SCHEMA';
-        Migration010DriverValidator::assertSchema($metadata, $postflight);
-        // Reuse previous schema postconditions, including username format and unique index.
-        $this->status();
-        return ['status'=>'PASS','mode'=>$postflight ? 'postflight' : 'preflight','database'=>$this->target,
-            'uuid'=>DriverDatabaseIdentity::UUID,'checksum'=>MigrationPlan::DRIVER010['sha256'],
-            'statement_count'=>3,'automatic_retry_allowed'=>false];
+        return $metadata;
     }
 
     /** SELECT-only inspection used by the Task 05D-7C CLI. */
@@ -225,6 +237,190 @@ final class MigrationRunner
         } finally {
             try { $this->rows('SELECT RELEASE_LOCK(:name)',['name'=>$lockName]); } catch (Throwable) {}
         }
+    }
+
+    /** Apply only the pinned 010 plan on the dedicated live test connection. */
+    public function driver010Apply(string $backupDirectory, string $manifestSha256): array
+    {
+        if ($this->target !== MigrationTarget::TEST) throw new SafetyException('MIGRATION_010_TEST_ONLY');
+        Migration010ApplyGuard::requireApproval();
+        $this->lastSafetyCheck = 'MIGRATION_010_APPLY_IDENTITY';
+        Migration010ApplyGuard::assertIdentity($this->db);
+        $lock = $this->target . ':migrations';
+        $this->lastSafetyCheck = 'MIGRATION_010_APPLY_LOCK';
+        if ((string)($this->rows('SELECT GET_LOCK(:name, 0) AS acquired', ['name'=>$lock])[0]['acquired'] ?? '') !== '1') {
+            throw new SafetyException('MIGRATION_010_APPLY_LOCK_UNAVAILABLE');
+        }
+        $result = null;
+        try {
+            Migration010ApplyGuard::assertIdentity($this->db);
+            $this->lastSafetyCheck = 'MIGRATION_010_APPLY_GRANTS';
+            Migration010ApplyGuard::assertGrants($this->db);
+            $session = $this->db->query('SELECT @@SESSION.autocommit AS autocommit, @@SESSION.foreign_key_checks AS foreign_key_checks')->fetch(PDO::FETCH_ASSOC);
+            if ($this->db->inTransaction() || (string)($session['autocommit'] ?? '') !== '1'
+                || (string)($session['foreign_key_checks'] ?? '') !== '1') {
+                throw new SafetyException('MIGRATION_010_APPLY_SESSION_REJECTED');
+            }
+            $this->lastSafetyCheck = 'MIGRATION_010_APPLY_BACKUP';
+            $backup = Migration010ApplyBackup::verify($backupDirectory, $manifestSha256);
+            $this->lastSafetyCheck = 'MIGRATION_010_SQL_CHECKSUM';
+            $plan = MigrationPlan::load(include010: true);
+            $entry = end($plan);
+            if ($entry['version'] !== MigrationPlan::DRIVER010['version'] || count($entry['statements']) !== 3) {
+                throw new SafetyException('MIGRATION_010_PLAN_REJECTED');
+            }
+            $this->lastSafetyCheck = 'MIGRATION_010_APPLY_LIVE_SCHEMA';
+            Migration010DriverValidator::assertLedger($this->driver010Ledger(), false);
+            $this->assertDriver010ApplySchema(false);
+            // The named lock serializes cooperating migration runners only.
+            $this->assertDriver010Lock($lock);
+            $result = $this->executeDriver010($entry, $lock);
+            $result['backup'] = $backup;
+        } finally {
+            try {
+                if ((string)($this->rows('SELECT RELEASE_LOCK(:name) AS released', ['name'=>$lock])[0]['released'] ?? '') !== '1') {
+                    throw new SafetyException('MIGRATION_010_APPLY_LOCK_RELEASE_UNVERIFIED');
+                }
+            } catch (Throwable $error) {
+                // Preserve the original failure. MySQL drops session locks if the connection is lost.
+                if ($result !== null) {
+                    throw MigrationExecutionException::fromFailure($error,0,'LOCK_RELEASE',MigrationPlan::DRIVER010['version'],3,3,true);
+                }
+            }
+        }
+        return $result;
+    }
+
+    private function driver010Ledger(): array
+    {
+        return $this->rows('SELECT version, checksum, status, completed_statements, total_statements FROM schema_migrations ORDER BY version');
+    }
+
+    private function assertDriver010Lock(string $lock): void
+    {
+        if ((string)($this->rows('SELECT IS_USED_LOCK(:name) = CONNECTION_ID() AS held', ['name'=>$lock])[0]['held'] ?? '') !== '1') {
+            throw new SafetyException('MIGRATION_010_APPLY_LOCK_LOST');
+        }
+    }
+
+    private function assertDriver010ApplySchema(bool $postflight): void
+    {
+        $metadata = $this->driver010Metadata();
+        $this->lastSafetyDetail = Migration010DriverValidator::partialState($metadata,$postflight);
+        Migration010DriverValidator::assertSchema($metadata,$postflight);
+        $baseline = $this->status();
+        if ($baseline['ledger'] !== 'present') throw new SafetyException('MIGRATION_010_LIVE_LEDGER_HIDDEN');
+
+        // Mirror 009's live postconditions. Ledger alone cannot prove its soft-delete schema.
+        $sql = <<<'SQL'
+SELECT (
+    (SELECT COUNT(*) FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('roles','schema_migrations','booking_requests')
+        AND TABLE_TYPE='BASE TABLE' AND ENGINE='InnoDB')=3
+    AND EXISTS (SELECT 1 FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='roles' AND NON_UNIQUE=0
+        GROUP BY INDEX_NAME HAVING COUNT(*)=1 AND MAX(COLUMN_NAME='name' AND SUB_PART IS NULL)=1)
+    AND (SELECT COUNT(*) FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='schema_migrations' AND INDEX_NAME='PRIMARY')=1
+    AND EXISTS (SELECT 1 FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='schema_migrations' AND INDEX_NAME='PRIMARY'
+        AND COLUMN_NAME='version' AND SUB_PART IS NULL)
+    AND (SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='booking_requests' AND IS_NULLABLE='YES' AND COLUMN_DEFAULT IS NULL
+        AND ((COLUMN_NAME='deleted_at' AND COLUMN_TYPE='datetime(6)')
+          OR (COLUMN_NAME='deleted_by' AND COLUMN_TYPE='bigint unsigned')
+          OR (COLUMN_NAME='deletion_reason' AND COLUMN_TYPE='varchar(100)')))=3
+    AND EXISTS (SELECT 1 FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='booking_requests' AND CONSTRAINT_NAME='fk_booking_deleted_by'
+        AND COLUMN_NAME='deleted_by' AND REFERENCED_TABLE_SCHEMA=DATABASE()
+        AND REFERENCED_TABLE_NAME='users' AND REFERENCED_COLUMN_NAME='id')
+    AND EXISTS (SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='booking_requests' AND CONSTRAINT_NAME='chk_booking_deleted_fields'
+        AND CONSTRAINT_TYPE='CHECK' AND ENFORCED='YES')
+) AS ready
+SQL;
+        if ((string)$this->db->query($sql)->fetchColumn() !== '1') {
+            throw new SafetyException('MIGRATION_010_BASELINE_SCHEMA_REJECTED');
+        }
+    }
+
+    private function driver010LedgerWrite(string $sql, array $params): void
+    {
+        $command = $this->db->prepare($sql);
+        if (!$command->execute($params) || $command->rowCount() !== 1) {
+            throw new SafetyException('MIGRATION_010_LEDGER_WRITE_NOT_CONFIRMED');
+        }
+    }
+
+    private function executeDriver010(array $entry, string $lock): array
+    {
+        $version = $entry['version'];
+        $completed = 0;
+        $ledgerCompleted = null;
+        $ledgerApplied = false;
+        $statement = 0;
+        $stage = 'LEDGER_STARTED';
+        $this->lastSafetyCheck = 'MIGRATION_010_EXECUTION';
+        try {
+            $this->driver010LedgerWrite(
+                "INSERT INTO schema_migrations (version,checksum,status,total_statements) VALUES (:version,:checksum,'started',3)",
+                ['version'=>$version,'checksum'=>$entry['sha256']]
+            );
+            $ledgerCompleted = 0;
+            foreach ($entry['statements'] as $index=>$sql) {
+                $statement = $index + 1;
+                $stage = 'LOCK_CHECK';
+                $this->assertDriver010Lock($lock);
+                $stage = $statement < 3 ? 'DDL' : 'STATEMENT';
+                $affected = $this->db->exec($sql);
+                if ($affected === false || ($statement === 3 && $affected !== 1)) {
+                    throw new SafetyException('MIGRATION_010_STATEMENT_NOT_CONFIRMED');
+                }
+                $completed = $statement;
+                $stage = 'LEDGER_PROGRESS';
+                $this->driver010LedgerWrite(
+                    "UPDATE schema_migrations SET completed_statements=:count WHERE version=:version AND status='started' AND completed_statements=:previous",
+                    ['count'=>$completed,'version'=>$version,'previous'=>$index]
+                );
+                $ledgerCompleted = $completed;
+            }
+            $statement = 0;
+            $stage = 'POSTCONDITIONS';
+            Migration010ApplyGuard::assertIdentity($this->db);
+            $this->assertDriver010ApplySchema(true);
+            $ledger = $this->driver010Ledger();
+            $pending = array_pop($ledger);
+            Migration010DriverValidator::assertLedger($ledger,false);
+            if (($pending['version'] ?? null) !== $version || ($pending['checksum'] ?? null) !== $entry['sha256']
+                || ($pending['status'] ?? null) !== 'started' || (string)($pending['completed_statements'] ?? '') !== '3'
+                || (string)($pending['total_statements'] ?? '') !== '3') {
+                throw new SafetyException('MIGRATION_010_LEDGER_PROGRESS_REJECTED');
+            }
+            $this->assertDriver010Lock($lock);
+            $stage = 'LEDGER_APPLIED';
+            $this->driver010LedgerWrite(
+                "UPDATE schema_migrations SET status='applied', finished_at=UTC_TIMESTAMP(6) WHERE version=:version AND status='started' AND completed_statements=3 AND total_statements=3",
+                ['version'=>$version]
+            );
+            $ledgerApplied = true;
+            Migration010DriverValidator::assertLedger($this->driver010Ledger(),true);
+        } catch (Throwable $error) {
+            if ($ledgerCompleted !== null && !$ledgerApplied) {
+                try {
+                    $this->assertDriver010Lock($lock);
+                    $this->driver010LedgerWrite(
+                        "UPDATE schema_migrations SET status='failed', failure_code='statement_failed' WHERE version=:version AND status='started'",
+                        ['version'=>$version]
+                    );
+                } catch (Throwable) {
+                    // A started row or uncertain final write is also a stop state for manual inspection.
+                }
+            }
+            throw MigrationExecutionException::fromFailure($error,$statement,$stage,$version,$completed,$ledgerCompleted,$ledgerApplied);
+        }
+        return ['status'=>'PASS','mode'=>'apply','database'=>$this->target,'uuid'=>DriverDatabaseIdentity::UUID,
+            'version'=>$version,'checksum'=>$entry['sha256'],'ledger'=>'applied','completed_statements'=>3,
+            'total_statements'=>3,'live_schema_verified'=>true,'automatic_retry'=>false];
     }
 
     /** SELECT-only 007 readiness check; requires a clean Schema 006 and ledger 001–006. */

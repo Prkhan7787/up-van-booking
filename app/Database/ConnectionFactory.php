@@ -17,6 +17,8 @@ final class ConnectionFactory
             'driver_auth_test' => ['prefix' => 'AUTH_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_auth_test'],
             'reset_maintenance' => ['prefix' => 'RESET_MAINTENANCE_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_reset_maintenance'],
             'test_provisioner' => ['prefix' => 'TEST_PROVISIONER_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_provisioner'],
+            'migration_preflight_test' => ['prefix' => 'MIGRATION_PREFLIGHT_DB_', 'database' => MigrationTarget::TEST, 'username' => Migration010ReadOnlyGrantPlan::ACCOUNT],
+            Migration010ApplyGuard::PURPOSE => ['prefix' => 'MIGRATION_010_APPLY_DB_', 'database' => MigrationTarget::TEST, 'username' => Migration010ApplyGuard::ACCOUNT],
             'migration_test' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
             'migration_test_006' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
             'migration_test_006_resume' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
@@ -26,14 +28,27 @@ final class ConnectionFactory
             default => throw new SafetyException('Unknown connection purpose.'),
         };
         $prefix = $connection['prefix'];
-        $config = [
-            'host' => Env::get($prefix . 'HOST', Env::get('DB_HOST', '127.0.0.1')),
-            'port' => Env::get($prefix . 'PORT', Env::get('DB_PORT', '3306')),
-            'database' => Env::get($prefix . 'DATABASE', $connection['database']),
-            'username' => Env::get($prefix . 'USERNAME'),
-            'password' => Env::get($prefix . 'PASSWORD'),
-        ];
+        if(in_array($purpose, ['migration_preflight_test', Migration010ApplyGuard::PURPOSE], true)) {
+            // The 010 profiles are process-only, with no runtime or legacy migrator fallback.
+            $config=[];
+            foreach(['HOST'=>'host','PORT'=>'port','DATABASE'=>'database','USERNAME'=>'username','PASSWORD'=>'password'] as $suffix=>$key) {
+                $value=getenv($prefix.$suffix);
+                if($value===false || $value==='') throw new SafetyException($purpose === Migration010ApplyGuard::PURPOSE
+                    ? 'MIGRATION_010_APPLY_PROCESS_CONFIG_REQUIRED' : 'MIGRATION_PREFLIGHT_PROCESS_CONFIG_REQUIRED');
+                $config[$key]=$value;
+            }
+        } else {
+            $config = [
+                'host' => Env::get($prefix . 'HOST', Env::get('DB_HOST', '127.0.0.1')),
+                'port' => Env::get($prefix . 'PORT', Env::get('DB_PORT', '3306')),
+                'database' => Env::get($prefix . 'DATABASE', $connection['database']),
+                'username' => Env::get($prefix . 'USERNAME'),
+                'password' => Env::get($prefix . 'PASSWORD'),
+            ];
+        }
         if(in_array($purpose,['migration_test_007','migration_test_008'],true))Migration007TargetIdentity::assertConfig($config);
+        if($purpose==='migration_preflight_test') DriverDatabaseIdentity::assertConfig($config,Migration010ReadOnlyGrantPlan::ACCOUNT);
+        if($purpose===Migration010ApplyGuard::PURPOSE) DriverDatabaseIdentity::assertConfig($config,Migration010ApplyGuard::ACCOUNT);
         if($purpose==='reset_maintenance' && ($config['port']!=='3306' || $config['host']!=='127.0.0.1' || $config['database']!==MigrationTarget::TEST))throw new SafetyException('Reset maintenance target rejected.');
         if ($config['database'] !== $connection['database']) throw new SafetyException('Database target rejected.');
         if ($config['username'] !== $connection['username']) throw new SafetyException('MySQL account does not match connection purpose.');
@@ -46,11 +61,20 @@ final class ConnectionFactory
 
     public static function connect(string $purpose = 'runtime', bool $selectDatabase = true): PDO
     {
+        if ($purpose === Migration010ApplyGuard::PURPOSE) {
+            Migration010ApplyGuard::requireApproval();
+            if (!$selectDatabase) throw new SafetyException('MIGRATION_010_TEST_DATABASE_REQUIRED');
+        }
         $config = self::config($purpose);
         if($purpose==='migration_test_006_resume') Migration006RestoreIdentity::assertConfig($config);
         $pdo = self::openPdo($config, $selectDatabase);
         try {
+            if ($purpose === Migration010ApplyGuard::PURPOSE) {
+                Migration010ApplyGuard::assertIdentity($pdo);
+                return $pdo;
+            }
             if ($purpose === 'driver_auth_test') DriverDatabaseIdentity::inspect($pdo);
+            elseif ($purpose === 'migration_preflight_test') DriverDatabaseIdentity::inspect($pdo,Migration010ReadOnlyGrantPlan::ACCOUNT);
             if(in_array($purpose,['migration_test_007','migration_test_008'],true))Migration007TargetIdentity::inspect($pdo);
             self::assertConnectionIdentity($pdo, $purpose, $config['database'], $config['username'], $config['host'], $selectDatabase);
             if($purpose==='reset_maintenance' && (string)$pdo->query('SELECT @@server_uuid')->fetchColumn()!=='77218fbd-d66d-11f1-9a0a-5c2886f057d5')throw new SafetyException('Reset maintenance server UUID rejected.');
@@ -68,6 +92,7 @@ final class ConnectionFactory
                 if($result['status']!=='PASS' || $result['missing_privileges']!==[] || $result['unexpected_privileges']!==[])throw new SafetyException('Reset maintenance grants do not match the reviewed scope.');
             }
             elseif($purpose==='driver_auth_test') self::assertDriverAuthGrants($pdo);
+            elseif($purpose==='migration_preflight_test') self::assertMigration010ReadOnlyGrants($pdo);
             else self::assertScopedGrants($pdo, $config['database'], in_array($purpose,['migration','migration_test'],true));
             return $pdo;
         } catch (PDOException $error) {
@@ -332,7 +357,7 @@ final class ConnectionFactory
         $targetPurpose = match ($purpose) {
             'runtime', 'preflight' => MigrationTarget::PRODUCTION,
             'migration' => MigrationTarget::PRODUCTION,
-            'test', 'auth_test', 'driver_auth_test', 'reset_maintenance', 'test_provisioner', 'migration_test', 'migration_test_006', 'migration_test_006_resume', 'migration_test_007', 'migration_test_008' => MigrationTarget::TEST,
+            'test', 'auth_test', 'driver_auth_test', 'reset_maintenance', 'test_provisioner', 'migration_preflight_test', 'migration_test', 'migration_test_006', 'migration_test_006_resume', 'migration_test_007', 'migration_test_008' => MigrationTarget::TEST,
             default => throw new SafetyException('Unknown connection purpose.'),
         };
         if ($selectDatabase) {
@@ -361,5 +386,20 @@ final class ConnectionFactory
         if ($result['status'] !== 'PASS' || !str_starts_with((string)($result['profile'] ?? ''), 'driver_')) {
             throw new SafetyException('Driver authentication grants do not match the reviewed capability scope.');
         }
+    }
+
+    public static function assertMigration010ReadOnlyGrants(PDO $pdo): void
+    {
+        if ($pdo->query('SELECT DATABASE()')->fetchColumn() !== MigrationTarget::TEST
+            || $pdo->query('SELECT CURRENT_USER()')->fetchColumn() !== Migration010ReadOnlyGrantPlan::ACCOUNT.'@127.0.0.1') {
+            throw new SafetyException('MIGRATION_PREFLIGHT_DATABASE_IDENTITY_REJECTED');
+        }
+        $resolved=GrantVerifier::currentUserGrants($pdo);
+        $partialRevokes=(bool)$pdo->query('SELECT @@GLOBAL.partial_revokes')->fetchColumn();
+        $mandatoryRoles=(string)$pdo->query('SELECT @@GLOBAL.mandatory_roles')->fetchColumn();
+        $result=Migration010ReadOnlyGrantPlan::evaluate(
+            $resolved['grants'],$partialRevokes,$resolved['roles_resolved'],$resolved['active_roles'],$mandatoryRoles
+        );
+        if($result['status']!=='PASS') throw new SafetyException('MIGRATION_PREFLIGHT_GRANTS_REJECTED');
     }
 }

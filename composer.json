@@ -1,0 +1,8 @@
+{
+  "name": "up-van-booking/application",
+  "type": "project",
+  "require": {
+    "php": "^8.4",
+    "firebase/php-jwt": "^7.2"
+  }
+}

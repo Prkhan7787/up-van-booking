@@ -34,10 +34,10 @@
                 <h2 id="login-title" class="text-2xl font-black">เข้าสู่ระบบ</h2>
                 <p class="mt-2 text-sm text-slate-600">เลือกวิธีเข้าสู่ระบบตามประเภทบัญชี</p>
                 <div class="mt-6">
-                    <button type="button" data-login-notice="microsoft" class="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 hover:border-up hover:text-up focus:outline-none focus:ring-2 focus:ring-up-200">
+                    <a href="/auth/microsoft/start" class="flex min-h-12 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 hover:border-up hover:text-up focus:outline-none focus:ring-2 focus:ring-up-200">
                         เข้าสู่ระบบด้วย Microsoft 365
-                    </button>
-                    <p class="mt-2 text-xs leading-5 text-slate-500">สำหรับบุคลากรมหาวิทยาลัย — ยังไม่เชื่อมต่อระบบ Microsoft 365</p>
+                    </a>
+                    <p class="mt-2 text-xs leading-5 text-slate-500">สำหรับบุคลากรมหาวิทยาลัย</p>
                 </div>
                 <section class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" aria-labelledby="driver-login-title">
                     <h3 id="driver-login-title" class="font-bold text-up">พนักงานขับรถ</h3>
@@ -55,7 +55,6 @@
                         </div>
                         <button type="submit" <?= empty($testAuthEnabled) ? 'disabled' : '' ?> class="min-h-12 w-full rounded-xl bg-up px-5 py-3 font-bold text-white hover:bg-up-900 focus:outline-none focus:ring-2 focus:ring-gold focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">เข้าสู่ระบบพนักงานขับรถ</button>
                     </form>
-                    <a href="/driver/register" class="mt-3 inline-flex min-h-11 items-center font-semibold text-up underline decoration-up-300 underline-offset-4 hover:text-up-900 focus:outline-none focus:ring-2 focus:ring-up-200" aria-describedby="driver-login-title">สมัครสมาชิกพนักงานขับรถ</a>
                 </section>
                 <?php if (!empty($driverRegistrationNotice)): ?><p role="status" class="mt-4 rounded-xl border border-up-200 bg-up-50 p-4 text-sm text-up">หากบัญชีนี้ยังไม่เคยสมัคร สามารถลองเข้าสู่ระบบด้วยเบอร์โทรศัพท์ได้ทันที หากยังเข้าไม่ได้ กรุณาติดต่อผู้ดูแล</p><?php endif; ?>
                 <?php if (!empty($error)): ?><div role="alert" class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><?= e($error) ?></div><?php endif; ?>

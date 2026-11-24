@@ -14,8 +14,8 @@ final class Migration010DriverValidator
             $row = $rows[$i] ?? [];
             if (($row['version'] ?? null) !== $entry['version'] || ($row['status'] ?? null) !== 'applied'
                 || !hash_equals($entry['sha256'], (string)($row['checksum'] ?? ''))
-                || (int)($row['completed_statements'] ?? -1) !== $entry['statement_count']
-                || (int)($row['total_statements'] ?? -1) !== $entry['statement_count']) {
+                || (string)($row['completed_statements'] ?? '') !== (string)$entry['statement_count']
+                || (string)($row['total_statements'] ?? '') !== (string)$entry['statement_count']) {
                 throw new SafetyException('MIGRATION_010_LEDGER_DIRTY_OR_CHECKSUM');
             }
         }
@@ -23,15 +23,9 @@ final class Migration010DriverValidator
 
     public static function assertSchema(array $metadata, bool $postflight): void
     {
-        $users = ['id','email','username','display_name','password_hash','is_active','auth_version','created_at','updated_at'];
-        $drivers = ['id','staff_code','display_name','contact_phone','is_active','created_by','updated_by','created_at','updated_at'];
-        if ($postflight) {
-            array_splice($users, 4, 0, ['nickname']);
-            array_splice($drivers, 4, 0, ['user_id']);
-        }
-        foreach (['users'=>$users,'drivers'=>$drivers] as $table=>$names) {
+        foreach (self::expectedColumns($postflight) as $table=>$names) {
             $columns = $metadata['columns'][$table] ?? [];
-            if (array_column($columns, 'COLUMN_NAME') !== $names) throw new SafetyException('MIGRATION_010_COLUMNS_DRIFT_'.$table);
+            if (array_column($columns, 'COLUMN_NAME') !== $names) throw new SafetyException('MIGRATION_010_COLUMNS_DRIFT_'.strtoupper($table));
             $byName = array_column($columns, null, 'COLUMN_NAME');
             self::column($byName['id'], 'bigint unsigned', 'NO');
             if ($table === 'users') {
@@ -56,24 +50,65 @@ final class Migration010DriverValidator
                 'REFERENCED_TABLE_NAME'=>'users','REFERENCED_COLUMN_NAME'=>'id','DELETE_RULE'=>'RESTRICT','UPDATE_RULE'=>'NO ACTION',
             ]) throw new SafetyException('MIGRATION_010_FOREIGN_KEY_REJECTED');
         } elseif ($linkIndexes !== [] || $linkForeignKeys !== []) throw new SafetyException('MIGRATION_010_PARTIAL_LINK_SCHEMA');
-        $roles = array_column($metadata['roles'] ?? [], 'description', 'name');
+        $roleRows = $metadata['roles'] ?? [];
+        $roles = array_column($roleRows, 'description', 'name');
         $roleNames = array_keys($roles); sort($roleNames);
         $expectedRoles = ['admin','approver','requester','vehicle_officer'];
         if ($postflight) $expectedRoles[] = 'driver';
         sort($expectedRoles);
-        if ($roleNames !== $expectedRoles || ($postflight && $roles['driver'] !== 'พนักงานขับรถ')) throw new SafetyException('MIGRATION_010_ROLES_DRIFT');
+        if (count($roleRows) !== count($roles) || $roleNames !== $expectedRoles ||
+            ($postflight && $roles['driver'] !== 'พนักงานขับรถ')) throw new SafetyException('MIGRATION_010_ROLES_DRIFT');
     }
 
     /** Diagnostic only: the result must never be used to resume DDL automatically. */
-    public static function partialState(array $metadata): array
+    public static function partialState(array $metadata, bool $postflight=false): array
     {
+        $visibility=self::metadataVisibility($metadata,$postflight);
         return [
             'nickname_present'=>in_array('nickname', array_column($metadata['columns']['users'] ?? [], 'COLUMN_NAME'), true),
             'email_nullable'=>array_column($metadata['columns']['users'] ?? [], 'IS_NULLABLE', 'COLUMN_NAME')['email'] ?? null,
             'driver_user_id_present'=>in_array('user_id', array_column($metadata['columns']['drivers'] ?? [], 'COLUMN_NAME'), true),
             'driver_role_present'=>in_array('driver', array_column($metadata['roles'] ?? [], 'name'), true),
+            'users_visible_columns'=>$visibility['visible_columns']['users'],
+            'drivers_visible_columns'=>$visibility['visible_columns']['drivers'],
+            'users_missing_expected_columns'=>$visibility['missing_columns']['users'],
+            'drivers_missing_expected_columns'=>$visibility['missing_columns']['drivers'],
+            'schema_metadata_visibility'=>$visibility['class'],
             'automatic_retry_allowed'=>false,
         ];
+    }
+
+    /**
+     * INFORMATION_SCHEMA may expose only columns covered by column-scoped grants.
+     * Missing metadata is a hard stop and is never treated as proof that a column is absent.
+     */
+    public static function metadataVisibility(array $metadata, bool $postflight): array
+    {
+        $expected=self::expectedColumns($postflight);
+        $rules=Migration010ReadOnlyGrantPlan::rules()['tables'];
+        $visible=[];$missing=[];$visibleWithinGrantedColumns=true;
+        foreach($expected as $table=>$columns){
+            $visible[$table]=array_values(array_map('strval',array_column($metadata['columns'][$table]??[],'COLUMN_NAME')));
+            $missing[$table]=array_values(array_diff($columns,$visible[$table]));
+            $granted=$rules[$table]['SELECT']??[];
+            if(array_diff($visible[$table],$granted)!==[])$visibleWithinGrantedColumns=false;
+        }
+        $complete=$missing['users']===[] && $missing['drivers']===[];
+        return [
+            'status'=>$complete?'COMPLETE':'INCOMPLETE',
+            'class'=>$complete?'COMPLETE':($visibleWithinGrantedColumns?'COLUMN_GRANTS_LIMIT_METADATA':'SCHEMA_DRIFT_OR_METADATA_HIDDEN'),
+            'reason_code'=>$complete?null:($visibleWithinGrantedColumns?'MIGRATION_010_METADATA_VISIBILITY_INSUFFICIENT':'MIGRATION_010_SCHEMA_METADATA_INCOMPLETE'),
+            'visible_columns'=>$visible,
+            'missing_columns'=>$missing,
+        ];
+    }
+
+    private static function expectedColumns(bool $postflight): array
+    {
+        $users=['id','email','username','display_name','password_hash','is_active','auth_version','created_at','updated_at'];
+        $drivers=['id','staff_code','display_name','contact_phone','is_active','created_by','updated_by','created_at','updated_at'];
+        if($postflight){array_splice($users,4,0,['nickname']);array_splice($drivers,4,0,['user_id']);}
+        return ['users'=>$users,'drivers'=>$drivers];
     }
 
     private static function column(array $column, string $type, string $nullable): void
