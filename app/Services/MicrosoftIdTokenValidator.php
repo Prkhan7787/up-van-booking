@@ -11,7 +11,20 @@ final class MicrosoftIdTokenValidator
             throw new \RuntimeException('OIDC_JWT_LIBRARY_MISSING');
         }
         if ($jwt===''||strlen($jwt)>32768||$expectedNonce==='') throw new \UnexpectedValueException('OIDC_TOKEN_INVALID');
-        $keys=\Firebase\JWT\JWK::parseKeySet($jwks,'RS256');
+        // A parser default does not override an algorithm supplied by the JWKS.
+        // Only trusted RSA signing keys for RS256 may reach the library decoder.
+        $allowed=[];
+        foreach ($jwks['keys'] ?? [] as $key) {
+            if (!is_array($key) || ($key['kty'] ?? null)!=='RSA'
+                || ($key['alg'] ?? 'RS256')!=='RS256' || ($key['use'] ?? 'sig')!=='sig'
+                || (isset($key['key_ops']) && (!is_array($key['key_ops']) || !in_array('verify',$key['key_ops'],true)))
+                || !is_string($key['kid'] ?? null) || $key['kid']==='') continue;
+            if (isset($allowed[$key['kid']])) throw new \UnexpectedValueException('OIDC_JWKS_DUPLICATE_KEY');
+            $key['alg']='RS256';
+            $allowed[$key['kid']]=$key;
+        }
+        if ($allowed===[]) throw new \UnexpectedValueException('OIDC_JWKS_NO_RS256_KEYS');
+        $keys=\Firebase\JWT\JWK::parseKeySet(['keys'=>array_values($allowed)],'RS256');
         $claims=\Firebase\JWT\JWT::decode($jwt,$keys);
         $issuer='https://login.microsoftonline.com/'.$config->tenantId.'/v2.0';
         $aud=$claims->aud??null;

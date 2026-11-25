@@ -38,6 +38,8 @@ return [
     'POST /officer/booking-requests/delete' => [App\Controllers\OfficerBookingController::class, 'delete', 'booking.officer_request.delete'],
     'GET /admin/system-logs' => [App\Controllers\SystemLogController::class, 'index', 'logs.view'],
     'GET /admin/users' => [App\Controllers\AdminUserManagementController::class, 'index', 'users.manage'],
+    'GET /admin/users/microsoft' => [App\Controllers\AdminMicrosoftIdentityController::class, 'index', 'users.manage'],
+    'POST /admin/users/microsoft' => [App\Controllers\AdminMicrosoftIdentityController::class, 'submit', 'users.manage'],
     'GET /admin/vehicles' => [App\Controllers\AdminVehicleController::class, 'index', 'vehicles.admin'],
     'POST /admin/vehicles' => [App\Controllers\AdminVehicleController::class, 'submit', 'vehicles.admin'],
     'POST /admin/users' => [App\Controllers\AdminUserManagementController::class, 'submit', 'users.manage'],

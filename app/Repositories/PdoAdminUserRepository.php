@@ -12,6 +12,7 @@ use PDO;
 final class PdoAdminUserRepository implements AdminUserRepository
 {
     private const FIELDS = 'id, username, email, display_name, is_active, auth_version, created_at';
+    public readonly bool $driverCreationEnabled;
 
     public function __construct(private readonly PDO $db)
     {
@@ -23,6 +24,9 @@ final class PdoAdminUserRepository implements AdminUserRepository
         $resolved = GrantVerifier::currentUserGrants($db);
         $evaluation=\App\Database\BookingCapabilityGrantGuard::evaluate($resolved['grants'],AdminUserGrantPlan::rules(),(bool)$identity['partial_revokes'],$resolved['roles_resolved'],true);
         if ($evaluation['status'] !== 'PASS') throw new AdminUsersUnavailableException();
+        // The whole account already matched a reviewed union above.
+        $driverGrant = GrantVerifier::evaluate($resolved['grants'], 'up_van_booking_test', AdminUserGrantPlan::driverCreationRules(), (bool)$identity['partial_revokes'], $resolved['roles_resolved']);
+        $this->driverCreationEnabled = $driverGrant['missing_privileges'] === [];
     }
 
     private function roles(int $id): array
@@ -90,10 +94,18 @@ final class PdoAdminUserRepository implements AdminUserRepository
         $q->execute(); return (int)$q->fetchColumn();
     }
 
-    public function createUser(string $username, string $email, string $displayName, string $hash): int
+    public function createUser(string $username, ?string $email, string $displayName, string $hash, ?string $nickname = null): int
     {
-        $q=$this->db->prepare('INSERT INTO users (username,email,display_name,password_hash,is_active) VALUES (:username,:email,:display_name,:hash,1)');
-        $q->execute(['username'=>$username,'email'=>$email,'display_name'=>$displayName,'hash'=>$hash]); return (int)$this->db->lastInsertId();
+        $params = ['username'=>$username,'email'=>$email,'display_name'=>$displayName,'hash'=>$hash];
+        if ($nickname === null) {
+            $q=$this->db->prepare('INSERT INTO users (username,email,display_name,password_hash,is_active) VALUES (:username,:email,:display_name,:hash,1)');
+        } else {
+            if (!$this->driverCreationEnabled) throw new AdminUsersUnavailableException();
+            $params['nickname'] = $nickname;
+            $q=$this->db->prepare('INSERT INTO users (username,email,display_name,password_hash,is_active,nickname) VALUES (:username,:email,:display_name,:hash,1,:nickname)');
+        }
+        $q->execute($params);
+        return (int)$this->db->lastInsertId();
     }
 
     public function setRoles(int $id, array $roles): void

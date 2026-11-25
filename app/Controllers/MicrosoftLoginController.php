@@ -2,21 +2,18 @@
 declare(strict_types=1);
 namespace App\Controllers;
 
-use App\Core\Env;
 use App\Core\View;
 use App\Services\MicrosoftOidcConfiguration;
 use App\Services\MicrosoftIdTokenValidator;
 
 final class MicrosoftLoginController
 {
+    /** Transport injection is for offline tests; normal web routing uses HTTPS methods below. */
+    public function __construct(private readonly ?\Closure $tokenExchange = null, private readonly ?\Closure $jwksProvider = null) {}
+
     public function start(): void
     {
-        $config = MicrosoftOidcConfiguration::fromEnvironment([
-            'MICROSOFT_TENANT_ID'=>Env::get('MICROSOFT_TENANT_ID'),
-            'MICROSOFT_CLIENT_ID'=>Env::get('MICROSOFT_CLIENT_ID'),
-            'MICROSOFT_CLIENT_SECRET'=>Env::get('MICROSOFT_CLIENT_SECRET'),
-            'MICROSOFT_REDIRECT_URI'=>Env::get('MICROSOFT_REDIRECT_URI'),
-        ]);
+        $config = MicrosoftOidcConfiguration::fromRuntimeEnvironment();
         if ($config === null) {
             http_response_code(503);
             View::render('auth/unavailable', [
@@ -47,12 +44,7 @@ final class MicrosoftLoginController
     {
         $pending=$_SESSION['microsoft_oidc_pending'] ?? null;
         unset($_SESSION['microsoft_oidc_pending']); // consume before any network operation; callback is single-use
-        $config=MicrosoftOidcConfiguration::fromEnvironment([
-            'MICROSOFT_TENANT_ID'=>Env::get('MICROSOFT_TENANT_ID'),
-            'MICROSOFT_CLIENT_ID'=>Env::get('MICROSOFT_CLIENT_ID'),
-            'MICROSOFT_CLIENT_SECRET'=>Env::get('MICROSOFT_CLIENT_SECRET'),
-            'MICROSOFT_REDIRECT_URI'=>Env::get('MICROSOFT_REDIRECT_URI'),
-        ]);
+        $config=MicrosoftOidcConfiguration::fromRuntimeEnvironment();
         $state=$_GET['state'] ?? null; $code=$_GET['code'] ?? null;
         if ($config===null || !is_array($pending) || !is_string($state) || !is_string($code)
             || $code==='' || strlen($code)>4096 || !is_string($pending['state']??null)
@@ -62,12 +54,16 @@ final class MicrosoftLoginController
             $this->denied(); return;
         }
         try {
-            if (!class_exists(\Firebase\JWT\JWT::class) || !function_exists('curl_init')) { $this->denied(); return; }
-            $token=$this->postToken($config,$code,$pending['verifier']);
-            $keys=$this->fetchJwks($config);
+            if (!class_exists(\Firebase\JWT\JWT::class) || ($this->tokenExchange===null && !function_exists('curl_init'))) { $this->denied(); return; }
+            $token=$this->tokenExchange!==null ? ($this->tokenExchange)($config,$code,$pending['verifier']) : $this->postToken($config,$code,$pending['verifier']);
+            $keys=$this->jwksProvider!==null ? ($this->jwksProvider)($config) : $this->fetchJwks($config);
             $claims=(new MicrosoftIdTokenValidator())->validate($token,$keys,$config,$pending['nonce']);
-            // No tenant/object-id mapping schema exists yet. Never create an account or infer one from email.
-            $this->denied();
+            // Factory remains gated and fails closed if schema or reviewed grants are absent.
+            $mapping=\App\Services\MicrosoftIdentityMappingFactory::create();
+            $state=$mapping->resolveIdentity($claims->tid,$claims->oid);
+            if ($state===null) { $this->denied(); return; }
+            (new \App\Core\SessionManager())->establish($state->userId,$state->authVersion);
+            header('Location: /dashboard',true,303);
         } catch (\Throwable) { $this->denied(); }
     }
 

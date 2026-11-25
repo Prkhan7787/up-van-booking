@@ -27,9 +27,14 @@ final class AuthService
     {
         if ($requiredRole !== null && !in_array($requiredRole, ['driver'], true)) throw new \InvalidArgumentException('Unsupported login role constraint.');
         $normalized = UsernamePolicy::normalize($identifier);
+        $phone = $requiredRole === null ? PhoneNumberPolicy::normalize($identifier) : null;
         $state = null;
-        $result = $this->rateLimiter->attempt($normalized, $sourceAddress, function () use ($identifier, $normalized, $password, $requiredRole, &$state): bool {
+        $result = $this->rateLimiter->attempt($phone ?? $normalized, $sourceAddress, function () use ($identifier, $normalized, $phone, $password, $requiredRole, &$state): bool {
             $account = UsernamePolicy::isValid($identifier) ? $this->repository->findLoginAccount($normalized) : null;
+            // An existing username takes priority when it also looks like a formatted phone number.
+            if ($account === null && $phone !== null && $phone !== $normalized) {
+                $account = $this->repository->findLoginAccount($phone);
+            }
             $verified = $account?->verify($password, $this->hasher, $this->dummyHash)
                 ?? $this->hasher->verify($password, $this->dummyHash);
 

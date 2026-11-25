@@ -26,6 +26,23 @@ final class Migration010ApplyGuard
         }
     }
 
+    /** Accept only the exact printable-ASCII format produced by the 010 rotation. */
+    public static function readPassword($input): string
+    {
+        if (!is_resource($input)) throw new SafetyException('MIGRATION_010_STDIN_CREDENTIAL_REJECTED');
+        $packet = stream_get_contents($input, 257);
+        if (!is_string($packet) || !preg_match('/\A([!-~]{12,255})\x00\z/D', $packet, $matches)) {
+            throw new SafetyException('MIGRATION_010_STDIN_CREDENTIAL_REJECTED');
+        }
+        return $matches[1];
+    }
+
+    public static function backupLedgerState(array $ledger): string
+    {
+        return in_array(MigrationPlan::MICROSOFT011['version'], array_column($ledger, 'version'), true)
+            ? '001-009 applied; 011 applied; 010 absent' : '001-009 applied; 010 absent';
+    }
+
     public static function rules(): array
     {
         return ['database'=>[], 'tables'=>[

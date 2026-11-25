@@ -8,16 +8,61 @@ final class Migration010DriverValidator
     public static function assertLedger(array $rows, bool $postflight): void
     {
         $plan = MigrationPlan::driver010LedgerEntries();
-        $expected = $postflight ? $plan : array_slice($plan, 0, 9);
-        if (count($rows) !== count($expected)) throw new SafetyException('MIGRATION_010_LEDGER_COUNT_OR_PARTIAL');
-        foreach ($expected as $i=>$entry) {
-            $row = $rows[$i] ?? [];
+        $baseline = array_slice($plan, 0, 9);
+        $driver = $plan[9] ?? null;
+        $identity = MigrationPlan::MICROSOFT011;
+        $byVersion = [];
+        foreach ($rows as $row) {
+            $version = $row['version'] ?? null;
+            if (!is_string($version) || isset($byVersion[$version])) throw new SafetyException('MIGRATION_010_LEDGER_COUNT_OR_PARTIAL');
+            $byVersion[$version] = $row;
+        }
+        $expectedVersions = array_column($baseline, 'version');
+        if ($postflight) $expectedVersions[] = $driver['version'];
+        if (isset($byVersion[$identity['version']])) $expectedVersions[] = $identity['version'];
+        // Rows are read in version order. 010 remains an independent Driver migration;
+        // 011 may already be applied, but must never be adopted or altered here.
+        $actualVersions = array_keys($byVersion);
+        sort($expectedVersions, SORT_STRING);
+        sort($actualVersions, SORT_STRING);
+        if ($actualVersions !== $expectedVersions) throw new SafetyException('MIGRATION_010_LEDGER_COUNT_OR_PARTIAL');
+
+        $expectedEntries = $baseline;
+        if ($postflight) $expectedEntries[] = $driver;
+        if (isset($byVersion[$identity['version']])) {
+            $expectedEntries[] = ['version'=>$identity['version'],'sha256'=>$identity['sha256'],'statement_count'=>$identity['statement_count']];
+        }
+        foreach ($expectedEntries as $entry) {
+            $row = $byVersion[$entry['version']] ?? [];
             if (($row['version'] ?? null) !== $entry['version'] || ($row['status'] ?? null) !== 'applied'
                 || !hash_equals($entry['sha256'], (string)($row['checksum'] ?? ''))
                 || (string)($row['completed_statements'] ?? '') !== (string)$entry['statement_count']
                 || (string)($row['total_statements'] ?? '') !== (string)$entry['statement_count']) {
                 throw new SafetyException('MIGRATION_010_LEDGER_DIRTY_OR_CHECKSUM');
             }
+        }
+    }
+
+    /** Validate the in-flight 010 row without assuming it is the last version-sorted row. */
+    public static function assertLedgerProgress(array $rows, int $completed): void
+    {
+        $version = MigrationPlan::DRIVER010['version'];
+        $pending = null;
+        $remaining = [];
+        foreach ($rows as $row) {
+            if (($row['version'] ?? null) === $version) {
+                if ($pending !== null) throw new SafetyException('MIGRATION_010_LEDGER_PROGRESS_REJECTED');
+                $pending = $row;
+            } else {
+                $remaining[] = $row;
+            }
+        }
+        self::assertLedger($remaining, false);
+        if ($pending === null || ($pending['checksum'] ?? null) !== MigrationPlan::DRIVER010['sha256']
+            || ($pending['status'] ?? null) !== 'started'
+            || (string)($pending['completed_statements'] ?? '') !== (string)$completed
+            || (string)($pending['total_statements'] ?? '') !== '3') {
+            throw new SafetyException('MIGRATION_010_LEDGER_PROGRESS_REJECTED');
         }
     }
 

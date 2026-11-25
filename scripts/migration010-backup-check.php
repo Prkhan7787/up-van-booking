@@ -11,11 +11,17 @@ try {
     if ($argv === [$argv[0], '--expected-ledger']) {
         foreach (array_slice(MigrationPlan::driver010LedgerEntries(), 0, 9) as $entry) {
             echo implode("\t", ['LEDGER', $entry['version'], $entry['sha256'], 'applied',
-                $entry['statement_count'], $entry['statement_count']]), PHP_EOL;
+                $entry['statement_count'], $entry['statement_count'], 'NULL']), PHP_EOL;
         }
         exit(0);
     }
-    $expectedTables = array_slice($argv, 2);
+    if ($argv === [$argv[0], '--expected-microsoft-011']) {
+        $entry = MigrationPlan::microsoft011()['migration'];
+        echo implode("\t", ['LEDGER',$entry['version'],$entry['sha256'],'applied',1,1,'NULL']), PHP_EOL;
+        exit(0);
+    }
+    $allowFailed011=in_array('--allow-failed-011',$argv,true);
+    $expectedTables = array_values(array_filter(array_slice($argv,2),static fn(string $arg):bool=>$arg!=='--allow-failed-011'));
     if ($expectedTables === [] || count(array_unique($expectedTables)) !== count($expectedTables)
         || !in_array('schema_migrations', $expectedTables, true)
         || !in_array('users', $expectedTables, true) || !in_array('drivers', $expectedTables, true)
@@ -63,6 +69,10 @@ try {
                 if (!preg_match("~^INSERT INTO `schema_migrations` VALUES \\('(?<version>[0-9]{3}_[a-z0-9_]+)','(?<checksum>[a-f0-9]{64})','(?<status>[a-z_]+)',(?<completed_statements>\\d+),(?<total_statements>\\d+),~D", $line, $row)) {
                     throw new SafetyException('BACKUP_LEDGER_ROW_REJECTED');
                 }
+                if ($row['version'] === MigrationPlan::MICROSOFT011['version'] &&
+                    preg_match("~,'(?<failure_code>statement_failed|postcondition_failed)'\\);$~D", $line, $failure)) {
+                    $row['failure_code'] = $failure['failure_code'];
+                }
                 $ledger[] = $row;
             } elseif ($activeData === 'roles' && preg_match("~^INSERT INTO `roles` VALUES \\(\\d+,'driver',~i", $line)) {
                 throw new SafetyException('BACKUP_DRIVER_ROLE_ALREADY_PRESENT');
@@ -81,8 +91,22 @@ try {
         || !preg_match('/^-- Dump completed on \d{4}-\d{2}-\d{2}/', (string)$lastLine)) {
         throw new SafetyException('BACKUP_DUMP_IDENTITY_OR_COVERAGE_REJECTED');
     }
-    Migration010DriverValidator::assertLedger($ledger, false);
-    echo json_encode(['dump_coverage'=>'PASS','base_tables'=>count($actual),'ledger'=>'001-009 applied','migration_010'=>'absent']), PHP_EOL;
+    $has011 = count($ledger) === 10;
+    $failed011=false;
+    if($allowFailed011){
+        if (!$has011) throw new SafetyException('BACKUP_011_FAILED_LEDGER_REQUIRED');
+        $baseline=array_slice($ledger,0,9);Migration010DriverValidator::assertLedger($baseline,false);
+        $entry=MigrationPlan::MICROSOFT011;$own=$ledger[9];
+        $failed011=($own['version']??null)===$entry['version']&&hash_equals($entry['sha256'],(string)($own['checksum']??''))
+            &&($own['status']??null)==='failed'&&(int)($own['completed_statements']??-1)===1&&(int)($own['total_statements']??-1)===1
+            &&in_array($own['failure_code']??null,['statement_failed','postcondition_failed'],true);
+        if(!$failed011)throw new SafetyException('BACKUP_011_FAILED_LEDGER_REJECTED');
+    }else{
+        Migration010DriverValidator::assertLedger($ledger,false);
+        if($has011&&($ledger[9]['version']??null)!==MigrationPlan::MICROSOFT011['version'])throw new SafetyException('BACKUP_011_LEDGER_REJECTED');
+    }
+    if ($has011 !== in_array('microsoft_identities', $actual, true)) throw new SafetyException('BACKUP_011_LEDGER_INVENTORY_MISMATCH');
+    echo json_encode(['dump_coverage'=>'PASS','base_tables'=>count($actual),'ledger'=>$failed011?'001-009 plus 011 failed 1/1':($has011?'001-009 plus 011 applied':'001-009 applied'),'migration_010'=>'absent']), PHP_EOL;
 } catch (Throwable $error) {
     $reason = $error instanceof SafetyException && preg_match('/\A[A-Z0-9_]+\z/D', $error->getMessage())
         ? $error->getMessage() : 'BACKUP_OFFLINE_CHECK_FAILED';

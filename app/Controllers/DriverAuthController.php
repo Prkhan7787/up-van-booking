@@ -50,14 +50,15 @@ final class DriverAuthController
             $this->loginFailed();
         } catch (\Throwable) {
             http_response_code(503);
-            View::render('auth/unavailable', ['pageTitle'=>'ยังไม่เปิดใช้การเข้าสู่ระบบ','message'=>'การเข้าสู่ระบบพนักงานขับรถยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล']);
+            View::render('auth/unavailable', ['pageTitle'=>'ยังไม่เปิดใช้การเข้าสู่ระบบ','message'=>'การเข้าสู่ระบบยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล']);
         }
     }
 
     private function loginFailed(): void
     {
         http_response_code(401);
-        View::render('auth/login', ['testAuthEnabled'=>true,'error'=>'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง']);
+        View::render('auth/login', ['testAuthEnabled'=>true,
+            'error'=>'ชื่อผู้ใช้ เบอร์โทรศัพท์ หรือรหัสผ่านไม่ถูกต้อง']);
     }
 
     private function unavailable(): void

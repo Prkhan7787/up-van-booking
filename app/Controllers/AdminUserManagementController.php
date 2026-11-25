@@ -35,7 +35,7 @@ final class AdminUserManagementController
         $this->renderAccounts($actor);
     }
 
-    private function renderAccounts(AuthenticatedPrincipal $actor, ?string $error=null): void
+    private function renderAccounts(AuthenticatedPrincipal $actor, ?string $error=null, bool $driverFormError=false): void
     {
         $model=$this->ui->adminUserManagementOptions();
         $search=is_string($_GET['q'] ?? '') ? ($_GET['q'] ?? '') : '';
@@ -73,6 +73,8 @@ final class AdminUserManagementController
         View::renderWithWorkspaceLayout('admin/users',[
             'pageTitle'=>'จัดการบัญชีผู้ใช้','activeNav'=>'admin-users','workspaceAuthenticated'=>true,'workspaceRoles'=>$actor->roles,
             'roles'=>$model['roles'],'actionsEnabled'=>$enabled,'accountRows'=>$listing['rows'],
+            'driverCreationEnabled'=>$enabled && $this->accounts->driverCreationEnabled,
+            'driverFormError'=>$driverFormError,
             'actorId'=>$actor->userId,'search'=>$search,'selectedRole'=>$filter,
             'page'=>$listing['page'],'hasNext'=>$listing['has_next'],'error'=>$error,'notice'=>is_string($notice)?$notice:null,
             'historyUser'=>$historyUser,'historyRows'=>$historyRows,'historyError'=>$historyError,'historyPage'=>$historyPage,'historyHasNext'=>$historyHasNext,
@@ -83,10 +85,11 @@ final class AdminUserManagementController
     {
         $actor=$this->authorize($actor);
         if (!Csrf::valid($_POST['_token'] ?? null)) { http_response_code(419); echo 'คำขอหมดอายุ กรุณาโหลดหน้าใหม่'; return; }
+        $action=$_POST['action'] ?? null;
         try {
             $this->accounts ??= AdminUserManagementFactory::createTestService();
-            $action=$_POST['action'] ?? null;
             if ($action==='create') $this->accounts->create($actor,$_POST);
+            elseif ($action==='create_driver') $this->accounts->createDriver($actor,$_POST);
             elseif ($action==='reset_password') {
                 $id=$this->positiveInteger($_POST['user_id'] ?? null);
                 $version=$this->positiveInteger($_POST['auth_version'] ?? null);
@@ -110,9 +113,10 @@ final class AdminUserManagementController
             $_SESSION['admin_users_notice']='บันทึกการจัดการบัญชีสำเร็จ';
             header('Location: /admin/users',true,303);
         } catch (AdminUserInputException $error) {
-            http_response_code(422); $this->renderAccounts($actor,$error->getMessage());
+            http_response_code(422); $this->renderAccounts($actor,$error->getMessage(),$action==='create_driver');
         } catch (AdminUsersUnavailableException) {
-            $this->renderAccounts($actor);
+            http_response_code(503);
+            $this->renderAccounts($actor,'สิทธิ์ฐานข้อมูลสำหรับการดำเนินการนี้ยังไม่พร้อม',$action==='create_driver');
         }
     }
 

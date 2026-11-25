@@ -118,6 +118,14 @@ input:checked::after, .circle.checked::after { content: ''; position: absolute; 
 .document-reminders li { padding-left: 0; }
 :focus-visible { outline: 2px solid var(--up-primary); outline-offset: 2px; }
 .booking-submit-tools { width: min(210mm, calc(100% - 24px)); margin: 18px auto 36px; padding: 0 0 18px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.booking-validation-summary { width: 100%; margin: 0 0 14px; padding: 14px 18px; border: 1px solid #dc2626; border-radius: 12px; background: #fef2f2; color: #7f1d1d; text-align: left; font: 14px/1.55 system-ui, sans-serif; }
+.booking-validation-summary[hidden] { display: none; }
+.booking-validation-summary ul { margin: 6px 0; padding-left: 22px; }
+.booking-validation-summary a { color: #991b1b; text-decoration: underline; text-underline-offset: 2px; }
+.booking-validation-summary p { margin: 8px 0 0; }
+.field input.booking-field-invalid, .field textarea.booking-field-invalid { outline: 2px solid #dc2626 !important; outline-offset: 1px; background-color: #fff7f7; }
+.travel-options.booking-group-invalid, fieldset.expenses.booking-group-invalid { outline: 2px solid #dc2626; outline-offset: 3px; border-radius: 4px; }
+.booking-field-invalid:focus-visible { outline-color: #b91c1c !important; }
 .booking-submit-button { display: inline-flex; width: auto; max-width: 100%; min-width: min(300px, 100%); min-height: 50px; align-items: center; justify-content: center; border: 0; border-radius: 12px; padding: 12px 24px; background: #4c1d95; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .booking-submit-button:hover:not(:disabled) { background: #3b1577; }
 .booking-submit-button:disabled { background: #6d28d9; color: #fff; opacity: .58; cursor: not-allowed; }
@@ -160,6 +168,7 @@ input:checked::after, .circle.checked::after { content: ''; position: absolute; 
     .section3-uncommitted .print-value { visibility: hidden; }
     .section3-uncommitted input:checked::after { display: none; }
     .field:focus-within { background: transparent; outline: none; }
+    .booking-field-invalid, .booking-group-invalid { outline: none !important; background: transparent !important; }
     .line, .expense-line, .decision-line { white-space: normal; }
     .field, .document-output { break-inside: avoid; }
     .destination-field .print-value { white-space: nowrap; overflow: hidden; text-overflow: clip; }

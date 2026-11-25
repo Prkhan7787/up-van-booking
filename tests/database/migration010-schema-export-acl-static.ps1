@@ -19,7 +19,9 @@ $helpers = @($ast.FindAll({
 if ($helpers.Count -ne $helperNames.Count) { throw 'Export helper functions are missing.' }
 
 $allowedCommands = @('Set-StrictMode', 'Read-Identity', 'Invoke-Pre010Backup', 'Read-BackupInventory',
-    'Convert-BackupHex', 'Get-CalendarRestoreSql') + $helperNames
+    'Convert-BackupHex', 'Get-CalendarRestoreSql', 'Split-Path', 'Join-Path', 'Sort-Object',
+    'Resolve-Migration011EvaluatorRuntime', 'ConvertTo-Migration011WindowsArgument',
+    'Invoke-Migration011MysqlCaptured') + $helperNames
 $commands = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
 foreach ($command in $commands) {
     $name = $command.GetCommandName()
@@ -32,9 +34,11 @@ $dump = @($topLevel | Where-Object { $_ -like '& $dump @common *' })
 if ($prepare -lt 0 -or $dump.Count -ne 1 -or $prepare -ge [Array]::IndexOf($topLevel, $dump[0])) {
     throw 'Snapshot ACL must be verified before mysqldump runs.'
 }
-if ($dump[0] -notmatch ' --no-data ' -or $ast.Extent.Text -notmatch "'--no-login-paths'" -or
-    $ast.Extent.Text -notmatch "'--password'") {
-    throw 'Expected schema-only dump and interactive credential options.'
+$clientOptions = @($topLevel | Where-Object { $_ -clike '$common=@(*' })
+if ($dump[0] -notmatch ' --no-data ' -or $clientOptions.Count -ne 1 -or
+    $clientOptions[0] -cnotmatch "'--login-path=upvan3306-backup'" -or
+    $clientOptions[0] -match '--password|--no-login-paths') {
+    throw 'Expected schema-only dump and the approved noninteractive MySQL Login Path.'
 }
 $backupFunction = $ast.Find({
     param($node)

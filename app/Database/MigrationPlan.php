@@ -4,6 +4,19 @@ namespace App\Database;
 
 final class MigrationPlan
 {
+    public const MICROSOFT011=['version'=>'011_microsoft_identities','file'=>'database/proposals/011_microsoft_identities.proposed.sql','sha256'=>'b381d5b7e093398d072dfceb337e1f7b355a204459b4bc723a680cd40f595664','statement_count'=>1];
+
+    /** Independent feature branch: requires 001-009; does not execute or adopt 010. */
+    public static function microsoft011(): array
+    {
+        $baseline=self::load(include009:true); // Revalidates every dependency's pinned SQL.
+        $entry=self::MICROSOFT011;
+        $sql=file_get_contents(dirname(__DIR__,2).'/'.$entry['file']);
+        if ($sql===false || !hash_equals($entry['sha256'],hash('sha256',$sql))) throw new SafetyException('MIGRATION_011_SQL_CHECKSUM_REJECTED');
+        $entry['statements']=SqlStatements::split($sql);
+        if (count($entry['statements'])!==1 || !str_starts_with($entry['statements'][0],'CREATE TABLE microsoft_identities (')) throw new SafetyException('MIGRATION_011_SQL_REJECTED');
+        return ['dependencies'=>$baseline,'migration'=>$entry,'010_policy'=>'must_be_absent'];
+    }
     public const VEHICLE006=['version'=>'006_vehicle_province_and_requested_vehicle','file'=>'database/drafts/006_vehicle_province_and_requested_vehicle.sql','kind'=>'forward_test','sha256'=>'61c0f5b4fe152c83142d49ba81070a70df2dc352a9073302809cee9696827748','objects'=>[]];
     public const VEHICLE007=['version'=>'007_vehicle_fuel_details','file'=>'database/drafts/007_vehicle_fuel_details.sql','kind'=>'forward_test','sha256'=>'0622c9006ae5be29c583082618e3ec2ef130bd44f39d8373038634d8cc6b03e8','objects'=>[]];
     public const BOOKING008=['version'=>'008_partial_a4_request_snapshot','file'=>'database/drafts/008_partial_a4_request_snapshot.sql','kind'=>'forward_test','sha256'=>'33b6ecc03325835b1908271fa9086afdc63a4a488b18824758f12b15b5015233','objects'=>[]];

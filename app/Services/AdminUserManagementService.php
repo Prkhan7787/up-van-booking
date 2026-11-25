@@ -4,13 +4,18 @@ namespace App\Services;
 
 use App\Contracts\AdminUserRepository;
 use App\Core\AdminUserInputException;
+use App\Core\AdminUsersUnavailableException;
 use App\Core\AuthorizationException;
 use App\Models\AuthenticatedPrincipal;
 
 final class AdminUserManagementService
 {
     public const ROLES=['requester','vehicle_officer','approver','admin'];
-    public function __construct(private readonly AdminUserRepository $users, private readonly PasswordHasher $hasher) {}
+    public function __construct(
+        private readonly AdminUserRepository $users,
+        private readonly PasswordHasher $hasher,
+        public readonly bool $driverCreationEnabled = false,
+    ) {}
 
     private function admin(AuthenticatedPrincipal $actor): void
     {
@@ -22,7 +27,7 @@ final class AdminUserManagementService
     public function listing(AuthenticatedPrincipal $actor, string $search='', string $role='', int $page=1): array
     {
         $this->admin($actor);
-        if (mb_strlen($search,'UTF-8')>100 || ($role!=='' && !in_array($role,self::ROLES,true)) || $page<1 || $page>10000) throw new AdminUserInputException('เงื่อนไขค้นหาไม่ถูกต้อง');
+        if (mb_strlen($search,'UTF-8')>100 || ($role!=='' && !in_array($role,[...self::ROLES,'driver'],true)) || $page<1 || $page>10000) throw new AdminUserInputException('เงื่อนไขค้นหาไม่ถูกต้อง');
         return $this->users->listUsers(trim($search),$role,$page);
     }
     public function resetPassword(AuthenticatedPrincipal $actor,int $targetId,int $version,string $password,string $confirmation): void
@@ -55,17 +60,50 @@ final class AdminUserManagementService
         if (!UsernamePolicy::isValid($username)) throw new AdminUserInputException('Username ต้องมี 3–50 ตัวอักษร ใช้ตัวอักษรอังกฤษ ตัวเลข จุด ขีดกลาง หรือ underscore');
         if (filter_var($email,FILTER_VALIDATE_EMAIL)===false || strlen($email)>254 || $name==='' || mb_strlen($name,'UTF-8')>150) throw new AdminUserInputException('Email หรือ Display Name ไม่ถูกต้อง');
         if (!PasswordPolicy::isValidForSetting($data['password']) || !hash_equals($data['password'],$data['password_confirmation'])) throw new AdminUserInputException('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษรและยืนยันตรงกัน');
-        $hash=$this->hasher->hash($data['password']);
+        return $this->persistNewAccount($actor,$username,$email,$name,$this->hasher->hash($data['password']),$role);
+    }
+
+    public function createDriver(AuthenticatedPrincipal $actor, array $data): int
+    {
+        $this->admin($actor);
+        if (!$this->driverCreationEnabled) throw new AdminUsersUnavailableException();
+        if (array_key_exists('role',$data) || array_key_exists('roles',$data)) {
+            throw new AdminUserInputException('ระบบกำหนดบทบาทพนักงานขับรถให้อัตโนมัติ');
+        }
+        foreach (['real_name','nickname','phone','password','password_confirmation'] as $field) {
+            if (!is_string($data[$field] ?? null)) {
+                throw new AdminUserInputException('กรุณากรอกข้อมูลบัญชีพนักงานขับรถให้ครบถ้วน');
+            }
+        }
+        $name = trim($data['real_name']);
+        $nickname = trim($data['nickname']);
+        if ($name === '' || $nickname === '' || mb_strlen($name,'UTF-8') > 150 || mb_strlen($nickname,'UTF-8') > 80
+            || preg_match('/[\x00-\x1F\x7F]/', $name.$nickname) === 1) {
+            throw new AdminUserInputException('กรุณากรอกชื่อจริงและชื่อเล่นให้ถูกต้อง');
+        }
+        $phone = PhoneNumberPolicy::normalize($data['phone']);
+        if ($phone === null) throw new AdminUserInputException('กรุณากรอกเบอร์โทรศัพท์มือถือให้ถูกต้อง');
+        $password = $data['password'];
+        if (strlen($password) > 1024 || !PasswordPolicy::isValidForSetting($password) || !hash_equals($password,$data['password_confirmation'])) {
+            throw new AdminUserInputException('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร ไม่เกิน 1,024 ไบต์ และยืนยันตรงกัน');
+        }
+        return $this->persistNewAccount($actor,$phone,null,$name,$this->hasher->hash($password),'driver',$nickname);
+    }
+
+    private function persistNewAccount(AuthenticatedPrincipal $actor, string $username, ?string $email, string $name, string $hash, string $role, ?string $nickname = null): int
+    {
         try {
-            return $this->users->transaction(function () use ($actor,$username,$email,$name,$hash,$role): int {
+            return $this->users->transaction(function () use ($actor,$username,$email,$name,$hash,$role,$nickname): int {
                 $this->users->lockUsers([$actor->userId]); $this->admin($actor);
-                $id=$this->users->createUser($username,$email,$name,$hash);
+                $id=$this->users->createUser($username,$email,$name,$hash,$nickname);
                 $this->users->setRoles($id,[$role]);
                 $this->users->audit($actor->userId,'admin.user.created',$id,['roles'=>[$role],'source'=>'admin_user_management']);
                 return $id;
             });
         } catch (\PDOException $error) {
-            if (($error->errorInfo[1] ?? null)===1062) throw new AdminUserInputException('Username หรือ Email ถูกใช้งานแล้ว');
+            if ((int)($error->errorInfo[1] ?? 0)===1062) {
+                throw new AdminUserInputException($role==='driver' ? 'เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว' : 'Username หรือ Email ถูกใช้งานแล้ว');
+            }
             throw $error;
         }
     }
@@ -110,6 +148,9 @@ final class AdminUserManagementService
             $target=$this->users->findUser($targetId);
             if ($target===null || (int)$target['auth_version']!==$version) throw new AdminUserInputException('ข้อมูลบัญชีเปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่');
             if (UsernamePolicy::normalize((string)$target['username'])==='admin1') throw new AdminUserInputException('บัญชี admin1 ได้รับการคุ้มครองในขั้นตอนนี้');
+            if (($roles!==null || $primaryChange!==null) && in_array('driver',$target['roles'],true)) {
+                throw new AdminUserInputException('บัญชีพนักงานขับรถใช้บทบาทพนักงานขับรถเท่านั้น');
+            }
             if ($primaryChange!==null) {
                 if (array_diff($target['roles'],self::ROLES)!==[]) throw new AdminUserInputException('พบบทบาทที่ระบบไม่รู้จัก กรุณาตรวจสอบก่อนเปลี่ยนสิทธิ์');
                 if (count($target['roles'])!==1) throw new AdminUserInputException('บัญชีมีหลายบทบาทหรือไม่มีบทบาท กรุณาตรวจสอบก่อนเปลี่ยนสิทธิ์');

@@ -10,7 +10,8 @@ const officerHtml = execFileSync(path.join(root, '.runtime/php84/php.exe'), ['-n
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET') { res.writeHead(405); return res.end('No backend writes in fixture server'); }
   if (req.url === '/officer-fixture') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(officerHtml); }
-  if (req.url === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(html); }
+  if (req.url === '/' ) { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(html); }
+  if (req.url === '/my/booking-requests') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end('<!doctype html><html lang="th"><body><h1>คำร้องของฉัน</h1></body></html>'); }
   const asset = req.url.split('?')[0];
   if (!/^\/assets\/[a-z0-9.-]+$/.test(asset)) { res.writeHead(404); return res.end(); }
   const file = path.join(root, 'public', asset);
@@ -46,12 +47,23 @@ let browser;
     }
     const before = posted;
     await page.locator('#submit-booking-request').click();
+    if (mode === 'full') {
+      assert.equal(await page.locator('[data-booking-validation-summary]').isVisible(), false, 'complete request has no missing-field warning');
+    } else {
+      const summary = page.locator('[data-booking-validation-summary]');
+      assert.equal(await summary.isVisible(), true, 'incomplete request shows an explanation before confirmation');
+      assert.match(await summary.innerText(), /ข้อมูลที่ยังไม่ครบ/);
+      assert(await page.locator('.booking-field-invalid').count() > 0, 'missing required fields receive a visible red outline');
+    }
     await page.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
     await page.getByText('เลขคำร้อง OFFLINE-UI-FIXTURE', { exact: false }).waitFor();
     assert.equal(posted, before + 1, mode + ' submits once without printing or PDF');
     assert.equal(await page.evaluate(() => window.__printCalls), 0);
     assert(payload.includes('name="purpose"'));
     assert.equal(await page.locator('#submit-booking-request').isEnabled(), false, 'successful submission cannot be repeated');
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await page.getByRole('heading', { name: 'คำร้องของฉัน' }).waitFor();
+    assert.match(page.url(), /\/my\/booking-requests$/);
     console.log('PASS: ' + mode + ' A4 submission with mocked network only; no database');
   }
   await page.setViewportSize({ width: 360, height: 850 }); await page.goto(base);

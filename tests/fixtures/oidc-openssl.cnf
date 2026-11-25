@@ -1,0 +1,4 @@
+# Minimal configuration for ephemeral RSA keys in offline OIDC tests only.
+[req]
+distinguished_name = fixture_dn
+[fixture_dn]

@@ -116,10 +116,127 @@ const submitForm = document.getElementById('booking-submit-form');
 const submitButton = document.getElementById('submit-booking-request');
 if (submitForm && submitButton) {
   // Blank fields are valid for intake; server validates all supplied values.
+  const validationSummary = submitForm.querySelector('[data-booking-validation-summary]');
+  const requiredFields = [
+    { key: 'requester_name', label: 'ชื่อผู้ขอใช้รถ', message: 'กรอกชื่อผู้ขอใช้รถ' },
+    { key: 'requester_phone', label: 'เบอร์โทรศัพท์ผู้ขอ', message: 'กรอกเบอร์โทรศัพท์ที่เจ้าหน้าที่ติดต่อได้' },
+    { key: 'purpose', label: 'วัตถุประสงค์', message: 'ระบุเหตุผลหรือวัตถุประสงค์การเดินทาง' },
+    { key: 'destination', label: 'สถานที่เดินทาง', message: 'ระบุสถานที่หรือปลายทาง' },
+    { key: 'passenger_count', label: 'จำนวนผู้เดินทาง', message: 'ระบุจำนวนผู้เดินทางอย่างน้อย 1 คน' },
+    { key: 'travel_type', label: 'ประเภทการเดินทาง', message: 'เลือกภายในจังหวัดหรือต่างจังหวัด' },
+    { key: 'expense_source', label: 'แหล่งค่าใช้จ่าย', message: 'เลือกแหล่งค่าใช้จ่าย' }
+  ];
+  let validationAttempted = false;
+  function fieldElements(name) {
+    if (name === 'travel_type') return [...submitForm.querySelectorAll('[name="travel_type"]')];
+    if (name === 'expense_source') return [...submitForm.querySelectorAll('[name="expense_source"]')];
+    const field = submitForm.elements.namedItem(name);
+    return field instanceof HTMLElement ? [field] : [];
+  }
+  function setFieldInvalid(name, invalid) {
+    const elements = fieldElements(name);
+    elements.forEach((element) => {
+      element.classList.toggle('booking-field-invalid', invalid);
+      if (invalid) element.setAttribute('aria-invalid', 'true');
+      else element.removeAttribute('aria-invalid');
+    });
+    const group = name === 'travel_type' ? submitForm.querySelector('.travel-options')
+      : name === 'expense_source' ? submitForm.querySelector('fieldset.expenses') : null;
+    group?.classList.toggle('booking-group-invalid', invalid);
+    if (group) {
+      if (invalid) group.setAttribute('aria-invalid', 'true');
+      else group.removeAttribute('aria-invalid');
+    }
+  }
+  function validateRequiredFields() {
+    const missing = [];
+    for (const field of requiredFields) {
+      const controls = fieldElements(field.key);
+      const value = field.key === 'travel_type' || field.key === 'expense_source'
+        ? controls.some(control => control instanceof HTMLInputElement && control.checked)
+        : controls.some(control => 'value' in control && String(control.value).trim() !== '');
+      setFieldInvalid(field.key, !value);
+      if (!value) missing.push(field);
+    }
+    const windowFields = ['departure_date', 'departure_time', 'return_date', 'return_time'];
+    const missingWindowFields = windowFields.filter(name => {
+      const field = submitForm.elements.namedItem(name);
+      return !(field instanceof HTMLInputElement) || field.value.trim() === '';
+    });
+    missingWindowFields.forEach(name => setFieldInvalid(name, true));
+    windowFields.filter(name => !missingWindowFields.includes(name)).forEach(name => setFieldInvalid(name, false));
+    const vehicle = submitForm.elements.namedItem('vehicle_id');
+    const hasVehicle = vehicle instanceof HTMLInputElement && /^\d+$/.test(vehicle.value) && Number(vehicle.value) > 0;
+    const scheduleMissing = !hasVehicle || missingWindowFields.length > 0;
+    if (validationSummary instanceof HTMLElement) {
+      validationSummary.replaceChildren();
+      if (missing.length || scheduleMissing) {
+        const title = document.createElement('strong');
+        title.textContent = 'ข้อมูลที่ยังไม่ครบ';
+        validationSummary.append(title);
+        const list = document.createElement('ul');
+        for (const item of missing) {
+          const row = document.createElement('li');
+          const link = document.createElement('a');
+          link.href = '#';
+          link.dataset.bookingFocus = item.key;
+          link.textContent = item.label + ': ' + item.message;
+          row.append(link);
+          list.append(row);
+        }
+        if (scheduleMissing) {
+          if (!hasVehicle) {
+            const row = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = '/bookings/calendar';
+            link.textContent = 'เลือกรถและวันเวลาเดินทางจากหน้าปฏิทิน';
+            row.append(link);
+            list.append(row);
+          }
+          const windowLabels = {
+            departure_date: 'วันที่ออกเดินทาง', departure_time: 'เวลาออกเดินทาง',
+            return_date: 'วันที่กลับ', return_time: 'เวลากลับ'
+          };
+          for (const name of missingWindowFields) {
+            const row = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = '#';
+            link.dataset.bookingFocus = name;
+            link.textContent = 'กรอก' + windowLabels[name];
+            row.append(link);
+            list.append(row);
+          }
+        }
+        validationSummary.append(list);
+        const note = document.createElement('p');
+        note.textContent = 'ยังส่งคำร้องได้ แต่เจ้าหน้าที่จะเห็นสถานะข้อมูลไม่ครบ และยังไม่กันช่วงเวลารถจนกว่าจะระบุข้อมูลให้ครบ';
+        validationSummary.append(note);
+        validationSummary.hidden = false;
+      } else {
+        validationSummary.hidden = true;
+      }
+    }
+    return missing.length === 0 && !scheduleMissing;
+  }
+  validationSummary?.addEventListener('click', (event) => {
+    const link = event.target instanceof Element ? event.target.closest('[data-booking-focus]') : null;
+    if (!(link instanceof HTMLAnchorElement)) return;
+    event.preventDefault();
+    fieldElements(link.dataset.bookingFocus || '')[0]?.focus();
+  });
+  submitForm.addEventListener('input', () => {
+    if (validationAttempted) validateRequiredFields();
+  });
+  submitForm.addEventListener('change', () => {
+    if (validationAttempted) validateRequiredFields();
+  });
   submitForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (submitButton.disabled || submitForm.dataset.submissionEnabled !== 'true') return;
     if (!submitForm.reportValidity()) return;
+    validationAttempted = true;
+    const complete = validateRequiredFields();
+    if (!complete) validationSummary?.focus();
     if (typeof window.Swal === 'undefined') {
       window.alert('ไม่สามารถเปิดหน้าต่างยืนยันได้ กรุณาโหลดหน้าใหม่');
       return;
@@ -127,7 +244,7 @@ if (submitForm && submitButton) {
     const confirmation = await window.Swal.fire({
       icon: 'question',
       title: 'ยืนยันส่งคำร้อง?',
-      text: 'ส่งข้อมูลตามที่กรอกให้เจ้าหน้าที่ตรวจสอบ หากข้อมูลรถหรือวันเวลายังไม่ครบ จะยังไม่กันช่วงเวลารถ',
+      text: complete ? 'ส่งข้อมูลตามที่กรอกให้เจ้าหน้าที่ตรวจสอบ' : 'มีช่องบังคับที่ยังไม่ครบ คุณยังส่งคำร้องได้ แต่คำร้องจะถูกระบุว่าข้อมูลไม่ครบและยังไม่กันช่วงเวลารถ',
       showCancelButton: true,
       confirmButtonText: 'ส่งคำร้อง',
       cancelButtonText: 'กลับไปตรวจข้อมูล',
@@ -160,7 +277,7 @@ if (submitForm && submitButton) {
         allowEscapeKey: false,
         confirmButtonColor: '#4c1d95'
       });
-      if (acknowledgement.isConfirmed) window.location.assign('/');
+      if (acknowledgement.isConfirmed) window.location.assign('/my/booking-requests');
     } catch (_) {
       if (submitForm.dataset.submissionEnabled === 'false') return;
       submitButton.disabled = false;

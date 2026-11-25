@@ -49,9 +49,11 @@ function driverCheck(bool $ok, string $label): void
 final class DriverTestRateStore implements LoginRateLimitStore
 {
     public int $calls = 0;
+    public array $lastBuckets = [];
     public function attempt(array $buckets, int $now, int $windowSeconds, callable $authenticate): App\Contracts\LoginRateLimitResult
     {
         $this->calls++;
+        $this->lastBuckets = $buckets;
         return App\Contracts\LoginRateLimitResult::completed($authenticate());
     }
 }
@@ -76,7 +78,8 @@ final class DriverTestAuthRepository implements AuthRepository
     public array $lookups = [];
     public ?AuthAccount $account = null;
     public ?AuthState $state = null;
-    public function findLoginAccount(string $normalizedIdentifier): ?AuthAccount { $this->lookups[]=$normalizedIdentifier; return $this->account; }
+    public array $accounts = [];
+    public function findLoginAccount(string $normalizedIdentifier): ?AuthAccount { $this->lookups[]=$normalizedIdentifier; return $this->accounts[$normalizedIdentifier] ?? $this->account; }
     public function loadAuthState(int $userId): ?AuthState { return $this->state; }
     public function replacePasswordHash(int $userId, string $passwordHash): void {}
 }
@@ -185,6 +188,30 @@ try {
 $authSessions->invalidateAuthentication();$authRepo->state=new AuthState(41,true,1,['approver','driver']);$blocked=false;
 try {$auth->login('0812345678','driver-login-fixture','127.0.0.1','driver');} catch (AuthenticationException) {$blocked=true;}
 driverCheck($blocked && $authSessions->claims()===null,'Driver endpoint rejects accounts with extra roles before creating a session');
+
+$authRepo->account=null;
+$authRepo->accounts=['0812345678'=>new AuthAccount(41,true,$passwordHash)];
+$authRepo->state=new AuthState(41,true,1,['driver']);
+$sharedRateStore=new DriverTestRateStore();
+$sharedAuth=new AuthService($authRepo,new LoginRateLimiter($sharedRateStore,str_repeat('l',40)),$hasher,$authSessions,new DriverTestEvents());
+$authRepo->lookups=[];
+$loggedIn=$sharedAuth->login('+66 81-234-5678','driver-login-fixture','127.0.0.1');
+driverCheck($loggedIn->roles===['driver'] && $authRepo->lookups===['0812345678'],'Shared login resolves a formatted phone to the canonical Driver account');
+$aliasBuckets=$sharedRateStore->lastBuckets;
+$authSessions->invalidateAuthentication();
+$sharedAuth->login('0812345678','driver-login-fixture','127.0.0.1','driver');
+driverCheck($sharedRateStore->lastBuckets===$aliasBuckets,'Shared phone login and legacy login use the same rate-limit buckets');
+$authSessions->invalidateAuthentication();
+$authRepo->accounts['081-234-5678']=new AuthAccount(42,true,$hasher->hash('admin-login-fixture'));
+$authRepo->state=new AuthState(42,true,1,['admin']);
+$authRepo->lookups=[];
+$loggedIn=$sharedAuth->login('081-234-5678','admin-login-fixture','127.0.0.1');
+driverCheck($loggedIn->roles===['admin'] && $authRepo->lookups===['081-234-5678'],'An existing username takes precedence over a matching formatted phone');
+$authSessions->invalidateAuthentication();
+$authRepo->lookups=[];
+$blocked=false;
+try {$sharedAuth->login('081-234-5678','driver-login-fixture','127.0.0.1');} catch (AuthenticationException) {$blocked=true;}
+driverCheck($blocked && $authRepo->lookups===['081-234-5678'] && $authSessions->claims()===null,'Wrong password on an exact username never falls back to the phone account');
 if (session_status()===PHP_SESSION_ACTIVE) session_destroy();
 
 echo 'PASS: Driver Authentication offline regression suite completed (' . $checks . ' checks).' . PHP_EOL;

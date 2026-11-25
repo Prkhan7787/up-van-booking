@@ -257,6 +257,7 @@ $vehicleLabel = trim(implode(' ', [
 </section>
 <?php elseif (!$workflowMode): ?>
 <section class="booking-submit-tools" aria-label="ส่งคำร้อง">
+    <div class="booking-validation-summary" data-booking-validation-summary role="alert" aria-live="polite" tabindex="-1" hidden></div>
     <button type="<?= $canSubmit ? 'submit' : 'button' ?>" id="submit-booking-request" class="booking-submit-button" <?= !$canSubmit || empty($submissionGateOpen) || $exampleReadOnly ? 'disabled' : '' ?>>ส่งคำร้องให้เจ้าหน้าที่รถ</button>
     <?php if ($exampleReadOnly): ?><p class="booking-submit-note" role="status">แบบฟอร์มตัวอย่างไม่สามารถส่งคำร้องได้</p>
     <?php elseif (!$canSubmit): ?><p class="booking-submit-note" role="status">บัญชีนี้ไม่มีสิทธิ์ส่งคำร้อง</p>

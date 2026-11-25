@@ -61,5 +61,7 @@ $script=file_get_contents(dirname(__DIR__).'/public/assets/form-preview.js');
 $css=file_get_contents(dirname(__DIR__).'/public/assets/form-preview.css');
 previewCheck(str_contains($view,"'data-document-destination', true") && str_contains($script,'measureText(line ||') && str_contains($script,'const maxPt = 15') && str_contains($script,'const minPt = 9.375'),'destination uses real rendered text measurement at the A4 normal size with a readable minimum');
 previewCheck(str_contains($css,'overflow-wrap: anywhere') && str_contains($css,'.field textarea {') && str_contains($css,'.field input, .field textarea { display: none; }'),'destination supports wrapping on screen and in print instead of clipping or ellipsis');
+previewCheck(str_contains($view,'data-booking-validation-summary') && str_contains($script,"label: 'ชื่อผู้ขอใช้รถ'") && str_contains($script,"label: 'แหล่งค่าใช้จ่าย'") && str_contains($script,'ข้อมูลที่ยังไม่ครบ'),'requester submission renders a dedicated accessible validation summary and required-field guidance');
+previewCheck(str_contains($script,'booking-field-invalid') && str_contains($script,"departure_date: 'วันที่ออกเดินทาง'") && str_contains($css,'outline: 2px solid #dc2626') && str_contains($script,"window.location.assign('/my/booking-requests')"),'missing fields are highlighted with explanations and successful submission returns to own requests');
 
 echo "PASS: Role-aware A4 preview offline checks; no database connection.\n";

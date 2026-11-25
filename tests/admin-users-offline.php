@@ -31,10 +31,10 @@ final class MemoryAdminUsers implements AdminUserRepository
     }
     public function lockUsers(array $ids): void {$this->locks[]=$ids;}
     public function activeAdminCount(): int {return count(array_filter($this->rows,static fn(array $r):bool=>(bool)$r['is_active'] && in_array('admin',$r['roles'],true)));}
-    public function createUser(string $username,string $email,string $displayName,string $hash): int {
-        foreach($this->rows as $row)if(strcasecmp($row['username'],$username)===0 || strcasecmp($row['email'],$email)===0){$e=new PDOException('synthetic duplicate');$e->errorInfo=['23000',1062,'synthetic'];throw $e;}
+    public function createUser(string $username,?string $email,string $displayName,string $hash,?string $nickname=null): int {
+        foreach($this->rows as $row)if(strcasecmp($row['username'],$username)===0 || ($email!==null && $row['email']!==null && strcasecmp($row['email'],$email)===0)){$e=new PDOException('synthetic duplicate');$e->errorInfo=['23000',1062,'synthetic'];throw $e;}
         $id=max(array_keys($this->rows))+1;
-        $this->rows[$id]=['id'=>$id,'username'=>$username,'email'=>$email,'display_name'=>$displayName,'is_active'=>1,'auth_version'=>1,'created_at'=>'2026-11-10 12:00:00','roles'=>[]];$this->hashes[$id]=$hash;return $id;
+        $this->rows[$id]=['id'=>$id,'username'=>$username,'email'=>$email,'display_name'=>$displayName,'nickname'=>$nickname,'is_active'=>1,'auth_version'=>1,'created_at'=>'2026-11-10 12:00:00','roles'=>[]];$this->hashes[$id]=$hash;return $id;
     }
     public function setRoles(int $id,array $roles): void {$this->rows[$id]['roles']=$roles;}
     public function setStatus(int $id,bool $active): void {$this->rows[$id]['is_active']=(int)$active;}
@@ -154,7 +154,7 @@ $accountRows=[['id'=>20,'username'=>'<script>alert(1)</script>','email'=>'<img s
 $actionsEnabled=true;$actorId=10;$page=1;$hasNext=false;
 ob_start();require dirname(__DIR__).'/app/Views/admin/users.php';$html=ob_get_clean();
 checkAdmin(!str_contains($html,'<script>alert(1)</script>') && str_contains($html,'&lt;script&gt;') && !str_contains($html,'<img src=x>'),'Shared original view escapes account data');
-checkAdmin(substr_count($html,'name="_token"')===4 && str_contains($html,'data-admin-confirm="เปลี่ยนบทบาทหลัก"') && str_contains($html,'data-admin-confirm="ยืนยันรีเซ็ตรหัสผ่านบัญชีนี้"'),'Create, role, status and password reset forms have CSRF and confirmations');
+checkAdmin(substr_count($html,'name="_token"')===5 && str_contains($html,'data-admin-confirm="เปลี่ยนบทบาทหลัก"') && str_contains($html,'data-admin-confirm="ยืนยันรีเซ็ตรหัสผ่านบัญชีนี้"'),'Create, role, status and password reset forms have CSRF and confirmations');
 checkAdmin(!str_contains($html,'จัดการหลายบทบาท') && !str_contains($html,'<dialog') && !str_contains($html,'data-role-editor'),'Removed multi-role modal and action are absent');
 $roleLabels=array_column($roles,'label','value');
 checkAdmin(!str_contains($html,'วันที่สร้าง') && !str_contains($html,'name="reason"') && !str_contains($html,'data-add-role'),'Main table hides created date and removes retired actions without reason fields');
@@ -210,5 +210,40 @@ $calls=count($historyRepo->filters);$_GET=['history'=>'20 OR 1=1'];ob_start();$c
 checkAdmin(count($historyRepo->filters)===$calls && http_response_code()===422,'Invalid history identifier rejected before log access');
 $_GET=[];ob_start();$controller->index($actor);ob_end_clean();
 checkAdmin(count($historyRepo->filters)===$calls,'Normal account listing performs no audit reads');
+
+[$driverRepo,$disabledService,$driverAdmin]=adminFixture();
+$driverService=new AdminUserManagementService($driverRepo,new PasswordHasher(),true);
+$driverController=new App\Controllers\AdminUserManagementController(null,$driverService);
+$input=['real_name'=>'ชื่อสำหรับทดสอบ','nickname'=>'ทดสอบ','phone'=>'+66 81-000-0000','password'=>'offline-only-driver','password_confirmation'=>'offline-only-driver'];
+checkAdmin(adminReject(fn()=>$disabledService->createDriver($driverAdmin,$input),App\Core\AdminUsersUnavailableException::class),'Driver creation fails closed without the grant capability');
+foreach (['requester','driver','vehicle_officer','approver'] as $role) {
+    checkAdmin(adminReject(fn()=>$driverService->createDriver(new AuthenticatedPrincipal(20,1,[$role]),$input),AuthorizationException::class),$role.' cannot create a Driver account');
+}
+checkAdmin(adminReject(fn()=>$driverService->createDriver($driverAdmin,$input+['roles'=>['admin']])),'Driver creation rejects forged roles');
+checkAdmin(adminReject(fn()=>$driverService->createDriver($driverAdmin,array_replace($input,['phone'=>'invalid']))) && adminReject(fn()=>$driverService->createDriver($driverAdmin,array_replace($input,['nickname'=>' ']))),'Driver creation validates phone and nickname');
+checkAdmin(adminReject(fn()=>$driverService->createDriver($driverAdmin,array_replace($input,['password_confirmation'=>'mismatch']))),'Driver creation validates password confirmation');
+$_POST=$input+['action'=>'create_driver','_token'=>'invalid'];
+ob_start();$driverController->submit($driverAdmin);ob_end_clean();
+checkAdmin(http_response_code()===419 && count($driverRepo->rows)===3,'Driver creation POST requires CSRF before writing');
+$driverRepo->beforeOperation=function()use($driverRepo):void{$driverRepo->rows[10]['auth_version']=2;};
+checkAdmin(adminReject(fn()=>$driverService->createDriver($driverAdmin,$input),AuthorizationException::class) && $driverRepo->audits===[],'Admin is revalidated under the account transaction lock');
+$driverRepo->beforeOperation=null;$driverRepo->failAudit=true;
+checkAdmin(adminReject(fn()=>$driverService->createDriver($driverAdmin,$input),RuntimeException::class) && count($driverRepo->rows)===3 && $driverRepo->hashes===[],'Failed audit rolls back Driver account and assigned role');
+$driverRepo->failAudit=false;
+$_POST=$input+['action'=>'create_driver','_token'=>App\Core\Csrf::token()];
+$driverController->submit($driverAdmin);
+$id=max(array_keys($driverRepo->rows));
+$driver=$driverRepo->rows[$id];
+checkAdmin(http_response_code()===303 && $driver['username']==='0810000000' && $driver['display_name']===$input['real_name'] && $driver['nickname']===$input['nickname'],'Admin POST creates a Driver with normalized phone and names');
+checkAdmin($driver['roles']===['driver'] && $driver['email']===null && $driver['is_active']===1,'Driver is active with only the Driver role and no email');
+checkAdmin(password_verify($input['password'],$driverRepo->hashes[$id]) && password_get_info($driverRepo->hashes[$id])['algoName']==='argon2id','Driver password is stored as Argon2id');
+checkAdmin($driverRepo->audits[0]===['actor'=>10,'action'=>'admin.user.created','target'=>$id,'metadata'=>['roles'=>['driver'],'source'=>'admin_user_management']],'Driver creation audit records Admin, target and role without personal data or credentials');
+checkAdmin(adminReject(fn()=>$driverService->createDriver($driverAdmin,array_replace($input,['phone'=>'081 000 0000']))),'Equivalent phone numbers cannot create duplicate accounts');
+checkAdmin(adminReject(fn()=>$driverService->changeRoles($driverAdmin,$id,1,['admin'])) && adminReject(fn()=>$driverService->changePrimaryRole($driverAdmin,$id,1,'driver','admin')),'A Driver account cannot be converted to a privileged role');
+$driverService->changeStatus($driverAdmin,$id,1,false);
+checkAdmin($driverRepo->rows[$id]['is_active']===0 && $driverRepo->rows[$id]['auth_version']===2,'Admin can deactivate Driver account and revoke prior sessions');
+$_GET=['role'=>'driver'];ob_start();$driverController->index($driverAdmin);$driverHtml=ob_get_clean();
+checkAdmin(str_contains($driverHtml,'value="create_driver"') && str_contains($driverHtml,'name="nickname"') && str_contains($driverHtml,'name="phone" type="tel"') && str_contains($driverHtml,'0810000000'),'Admin view renders Driver form and filters Driver rows');
+unset($_POST,$_GET);
 echo 'PASS: ',$checks,' Admin user offline checks; no database connected.',PHP_EOL;
 ob_end_flush();

@@ -1,24 +1,26 @@
 #Requires -Version 5.1
 #Requires -PSEdition Desktop
 [CmdletBinding()]
-param([switch]$VerifyPreflight, [switch]$BackupPre010)
+param([switch]$VerifyPreflight, [switch]$BackupPre010, [switch]$Backup011Reconciliation)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-if ($VerifyPreflight -and $BackupPre010) { throw 'CHOOSE_ONE_EXPORT_MODE' }
+$selectedModes=@();if($VerifyPreflight){$selectedModes+='VerifyPreflight'};if($BackupPre010){$selectedModes+='BackupPre010'};if($Backup011Reconciliation){$selectedModes+='Backup011Reconciliation'}
+if ($selectedModes.Count -gt 1) { throw 'CHOOSE_ONE_EXPORT_MODE' }
 $mysqlBin='C:\Program Files\MySQL\MySQL Server 8.4\bin'
 $mysql=[IO.Path]::Combine($mysqlBin, 'mysql.exe')
 $dump=[IO.Path]::Combine($mysqlBin, 'mysqldump.exe')
-# This worktree intentionally reuses only the approved runtime, never another tree's source.
-$projectFolder='C:\'+[string][char]0x0e08+[char]0x0e2d+[char]0x0e07+[char]0x0e23+[char]0x0e16+[char]0x0e15+[char]0x0e39+[char]0x0e49
-$runtimeRoot=[IO.Path]::Combine($projectFolder, 'up-van-booking')
-$php=[IO.Path]::Combine($runtimeRoot, '.runtime\php84\php.exe')
+$projectRoot=Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'lib/migration011-apply-credentials.ps1')
+$php=Resolve-Migration011EvaluatorRuntime $projectRoot
+$runtimeRoot=Split-Path -Parent (Split-Path -Parent $php)
+$backupChecker = [IO.Path]::Combine($PSScriptRoot, 'migration010-backup-check.php')
 foreach($exe in @($mysql,$dump)){
     if(![IO.File]::Exists($exe)){throw 'MYSQL_CLIENT_MISSING'}
     $version=& $exe --no-defaults --version
     if($LASTEXITCODE -ne 0 -or $version -notmatch '\b8\.4\.9\b'){throw 'MYSQL_CLIENT_VERSION_REJECTED'}
 }
 if(![IO.File]::Exists($php)){throw 'PROJECT_PHP_RUNTIME_MISSING'}
-$common=@('--no-defaults','--no-login-paths','--protocol=TCP','--host=127.0.0.1','--port=3306','--user=root','--password','--default-character-set=utf8mb4')
+$common=@('--no-defaults','--login-path=upvan3306-backup','--protocol=TCP','--host=127.0.0.1','--port=3306','--default-character-set=utf8mb4')
 
 function New-PrivateSnapshotDirectory {
     param([Parameter(Mandatory=$true)][string]$Path)
@@ -116,7 +118,6 @@ function Write-SnapshotManifest {
 }
 
 function Read-Identity([string]$Stage) {
-    $Host.UI.WriteLine("$Stage - Enter the authorised DBA password at the hidden MySQL prompt.")
     $rows=@(& $mysql @common --batch --raw --skip-column-names --database=up_van_booking_test '--execute=SELECT @@server_uuid,@@port,DATABASE(),VERSION(),CURRENT_USER()')
     if($LASTEXITCODE -ne 0 -or $rows.Count -ne 1){throw "DBA_AUTH_OR_IDENTITY_QUERY_FAILED: $Stage"}
     $fields=$rows[0] -split "`t"
@@ -125,14 +126,13 @@ function Read-Identity([string]$Stage) {
     return $fields[4]
 }
 
-function Read-BackupInventory([string]$Stage) {
-    $Host.UI.WriteLine("$Stage - Enter the authorised DBA password at the hidden MySQL prompt.")
+function Read-BackupInventory([string]$Stage,[bool]$Reconciliation=$false) {
     $query = @'
 SELECT 'IDENTITY',@@server_uuid,@@port,DATABASE(),VERSION(),CURRENT_USER();
 SELECT 'OBJECT',TABLE_NAME,TABLE_TYPE,COALESCE(ENGINE,'-') FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME;
 SELECT 'VIEW',HEX(VIEW_DEFINITION),HEX(DEFINER),SECURITY_TYPE,CHECK_OPTION,CHARACTER_SET_CLIENT,COLLATION_CONNECTION FROM information_schema.VIEWS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='calendar_events';
 SELECT 'DEPENDENCY',TABLE_SCHEMA,TABLE_NAME FROM information_schema.VIEW_TABLE_USAGE WHERE VIEW_SCHEMA=DATABASE() AND VIEW_NAME='calendar_events' ORDER BY TABLE_SCHEMA,TABLE_NAME;
-SELECT 'LEDGER',version,checksum,status,completed_statements,total_statements FROM schema_migrations ORDER BY version;
+SELECT 'LEDGER',version,checksum,status,completed_statements,total_statements,COALESCE(failure_code,'NULL') FROM schema_migrations ORDER BY version;
 SELECT 'CALENDAR_READ',COUNT(*) FROM calendar_events;
 '@
     $rows = @(& $mysql @common "--init-command=$backupGuard" --skip-reconnect --batch --raw --skip-column-names --database=up_van_booking_test "--execute=$query")
@@ -163,13 +163,48 @@ SELECT 'CALENDAR_READ',COUNT(*) FROM calendar_events;
             default { throw 'BACKUP_INVENTORY_RESULT_REJECTED' }
         }
     }
+    $ledgerPlan = @(& $php -n $backupChecker --expected-ledger)
+    if ($LASTEXITCODE -ne 0 -or $ledgerPlan.Count -ne 9) { throw 'BACKUP_LEDGER_PLAN_REJECTED' }
+    if ($ledger.Count -notin @(9, 10) -or
+        ![string]::Equals(($ledger[0..8] -join "`n"), ($ledgerPlan -join "`n"), [StringComparison]::Ordinal)) {
+        throw 'BACKUP_LEDGER_NOT_PRE010'
+    }
+    $has011 = $ledger.Count -eq 10
+    if ($Reconciliation -and !$has011) { throw 'BACKUP_011_FAILED_LEDGER_REQUIRED' }
+    if ($has011) {
+        $ledger011Plan = @(& $php -n $backupChecker --expected-microsoft-011)
+        if ($LASTEXITCODE -ne 0 -or $ledger011Plan.Count -ne 1 -or
+            $ledger011Plan[0] -cnotmatch '\ALEDGER\t011_microsoft_identities\t[a-f0-9]{64}\tapplied\t1\t1\tNULL\z') {
+            throw 'BACKUP_LEDGER_PLAN_REJECTED'
+        }
+        if ($Reconciliation) {
+            # Both sources emit LEDGER, version, checksum, status, completed, total, failure_code.
+            $expected011 = $ledger011Plan[0] -split "`t"
+            $prefix = ($expected011[0..2] -join "`t") + "`tfailed`t1`t1`t"
+            $eligibleRows = @(($prefix + 'statement_failed'), ($prefix + 'postcondition_failed'))
+            if ([Array]::IndexOf($eligibleRows, $ledger[9]) -lt 0) {
+                $actual011 = $ledger[9] -split "`t"
+                $actual = 'malformed TSV row'
+                if ($actual011.Count -eq 7 -and $ledger[9] -cmatch '\ALEDGER(?:\t[A-Za-z0-9_]{0,64}){6}\z') {
+                    $actual = "'" + ($actual011[1..6] -join "', '") + "'"
+                }
+                throw ("BACKUP_011_FAILED_LEDGER_REJECTED: Expected version, checksum, status, completed, total, failure_code " +
+                    "'$($expected011[1])', '$($expected011[2])', 'failed', '1', '1', 'statement_failed or postcondition_failed'. Actual: $actual")
+            }
+        } elseif (![string]::Equals($ledger[9], $ledger011Plan[0], [StringComparison]::Ordinal)) {
+            throw 'BACKUP_LEDGER_NOT_PRE010'
+        }
+    }
+    $expectedTables = @('approval_decisions','audit_logs','auth_login_buckets','booking_notifications','booking_passengers',
+        'booking_requests','booking_reviews','booking_status_history','drivers','roles','schema_migrations','user_roles',
+        'users','vehicle_assignments','vehicles')
+    if ($has011) { $expectedTables += 'microsoft_identities' }
     if ($views.Count -ne 1 -or $views[0] -cne 'calendar_events' -or
         ($dependencies -join '|') -cne "DEPENDENCY`tup_van_booking_test`tbooking_requests|DEPENDENCY`tup_van_booking_test`tvehicle_assignments" -or
-        'booking_requests' -cnotin $tables -or 'vehicle_assignments' -cnotin $tables -or 'schema_migrations' -cnotin $tables -or
+        (($tables | Sort-Object) -join "`n") -cne (($expectedTables | Sort-Object) -join "`n") -or
         $viewRows.Count -ne 1 -or $viewRows[0].Count -ne 7 -or $calendarCount.Count -ne 1 -or
         $calendarCount[0] -cnotmatch '^CALENDAR_READ\t[0-9]+$') { throw 'BACKUP_CALENDAR_INVENTORY_REJECTED' }
-    if ($ledger.Count -ne 9 -or @($ledger -cmatch '^LEDGER\t010_').Count -ne 0) { throw 'BACKUP_LEDGER_NOT_PRE010' }
-    return @{ Tables=$tables; Identity=$rows[0]; View=$viewRows[0]; Dependencies=$dependencies; Ledger=$ledger; CalendarCount=$calendarCount[0] }
+    return @{ Tables=$tables; Identity=$rows[0]; View=$viewRows[0]; Dependencies=$dependencies; Ledger=$ledger; CalendarCount=$calendarCount[0]; Has011=$has011; HasFailed011=$Reconciliation }
 }
 
 function Convert-BackupHex([string]$Hex) {
@@ -193,16 +228,11 @@ function Get-CalendarRestoreSql([string[]]$View) {
         '`calendar_events` AS' + "`r`n$definition$option;`r`n"
 }
 
-function Invoke-Pre010Backup {
+function Invoke-Pre010Backup([bool]$Reconciliation=$false) {
     # This executes on every client connection, including the dump connection. A mismatch
     # errors before any inventory queries or export. No durable server state is changed.
     $backupGuard = "DO IF(@@server_uuid='77218fbd-d66d-11f1-9a0a-5c2886f057d5' AND @@port=3306 AND VERSION()='8.4.9' AND CURRENT_USER() IN ('root@localhost','root@127.0.0.1'),0,JSON_EXTRACT(CONCAT('server identity rejected ',@@server_uuid),'$'))"
-    $checker = [IO.Path]::Combine($PSScriptRoot, 'migration010-backup-check.php')
-    $plan = @(& $php -n $checker --expected-ledger)
-    if ($LASTEXITCODE -ne 0 -or $plan.Count -ne 9) { throw 'BACKUP_MIGRATION_PLAN_REJECTED' }
-
-    $before = Read-BackupInventory '1/3 Inventory before backup'
-    if (($before.Ledger -join "`n") -cne ($plan -join "`n")) { throw 'BACKUP_LIVE_LEDGER_OR_CHECKSUM_REJECTED' }
+    $before = Read-BackupInventory '1/3 Inventory before backup' $Reconciliation
     $viewSql = Get-CalendarRestoreSql $before.View
     $parent = [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'UPVanBooking\pre010-backups')
     $directory = [IO.Path]::Combine($parent, [Guid]::NewGuid().ToString('N'))
@@ -214,16 +244,17 @@ function Invoke-Pre010Backup {
     $view = [IO.Path]::Combine($directory, 'calendar_events_view_restore.sql')
     $tables = $before.Tables
 
-    $Host.UI.WriteLine('2/3 Base table export. Enter the authorised DBA password at the hidden MySQL prompt.')
+    $Host.UI.WriteLine('2/3 Base table export through the existing DBA MySQL Login Path.')
     & $dump @common "--init-command=$backupGuard" --lock-tables --skip-single-transaction --quick --hex-blob --add-locks --skip-extended-insert --triggers --skip-routines --skip-events --no-tablespaces --set-gtid-purged=OFF --column-statistics=0 --comments --dump-date "--result-file=$base" up_van_booking_test @tables
     if ($LASTEXITCODE -ne 0) { throw 'BACKUP_DUMP_FAILED_DO_NOT_USE' }
     Assert-PrivateSnapshotFile -Path $base
 
-    $after = Read-BackupInventory '3/3 Inventory after backup'
-    foreach ($field in @('Identity','Tables','View','Dependencies','Ledger','CalendarCount')) {
+    $after = Read-BackupInventory '3/3 Inventory after backup' $Reconciliation
+    foreach ($field in @('Identity','Tables','View','Dependencies','Ledger','CalendarCount','Has011','HasFailed011')) {
         if (($before[$field] -join "`n") -cne ($after[$field] -join "`n")) { throw "BACKUP_STATE_CHANGED_DO_NOT_USE: $field" }
     }
-    & $php -n $checker $base @tables
+    $checkArguments=@($base)+@($tables);if($Reconciliation){$checkArguments+='--allow-failed-011'}
+    & $php -n $backupChecker @checkArguments
     if ($LASTEXITCODE -ne 0) { throw 'BACKUP_CONTENT_REJECTED_DO_NOT_USE' }
     [IO.File]::WriteAllText($view, $viewSql, [Text.UTF8Encoding]::new($false))
     Assert-PrivateSnapshotFile -Path $view
@@ -233,7 +264,7 @@ function Invoke-Pre010Backup {
         format='upvan-pre010-logical-backup-v1';host='127.0.0.1';port=3306;database='up_van_booking_test'
         uuid='77218fbd-d66d-11f1-9a0a-5c2886f057d5';version='8.4.9'
         started_utc=$started;finished_utc=[DateTime]::UtcNow.ToString('o');tables=$tables
-        ledger='001-009 applied; 010 absent';calendar_view='calendar_events';calendar_security=$before.View[3]
+        ledger=$(if($before.HasFailed011){'001-009 applied; 011 failed 1/1; 010 absent'}elseif($before.Has011){'001-009 applied; 011 applied; 010 absent'}else{'001-009 applied; 010 absent'});calendar_view='calendar_events';calendar_security=$before.View[3]
         calendar_dependencies=@('booking_requests','vehicle_assignments');calendar_count=[long](($before.CalendarCount -split "`t")[1])
         base_tables_sha256=$baseHash;base_tables_bytes=[IO.FileInfo]::new($base).Length
         calendar_view_sha256=$viewHash;calendar_view_bytes=[IO.FileInfo]::new($view).Length
@@ -242,16 +273,35 @@ function Invoke-Pre010Backup {
     $manifestPath = [IO.Path]::Combine($directory, 'backup-manifest.json')
     Write-SnapshotManifest -Path $manifestPath -Manifest $manifest
     Assert-PrivateSnapshotFile -Path $manifestPath
+    $manifestHash=Get-SnapshotSha256 -Path $manifestPath
+    # Verify the exported snapshot with the guard for its ledger branch.
+    $verificationRequest=[System.Web.Script.Serialization.JavaScriptSerializer]::new().Serialize(@{directory=$directory;manifest_sha256=$manifestHash})
+    if($Reconciliation -or !$before.Has011){
+        $verifyMode=if($Reconciliation){'--verify-011-reconciliation-backup'}else{'--verify-011-backup'}
+        $verification=@($verificationRequest | & $php -n (Join-Path $PSScriptRoot 'migration011-provision-grants-check.php') $verifyMode)
+        if($LASTEXITCODE -ne 0){throw 'BACKUP_011_VERIFICATION_FAILED_DO_NOT_USE'}
+        $Host.UI.WriteLine(($verification -join "`n"))
+    }else{
+        $verifyScript=Join-Path $PSScriptRoot 'migration010-apply-preflight.php'
+        $verifyArgs=@('-n',(ConvertTo-Migration011WindowsArgument $verifyScript),'--verify-backup')
+        $verification=Invoke-Migration011MysqlCaptured -ClientPath $php -ClientArgs $verifyArgs -Sql $verificationRequest
+        if($verification.ExitCode -ne 0 -or $verification.InputWriteFailed){throw 'BACKUP_010_VERIFICATION_FAILED_DO_NOT_USE'}
+        $Host.UI.WriteLine($verification.Stdout.Trim())
+    }
     "BACKUP_DIRECTORY=$directory"
     "BASE_TABLES=$($tables.Count)"
     "BASE_SHA256=$baseHash"
     "CALENDAR_VIEW_SHA256=$viewHash"
-    "MANIFEST_SHA256=$(Get-SnapshotSha256 -Path $manifestPath)"
-    'PRE010_BACKUP=PASS'
+    "MANIFEST_SHA256=$manifestHash"
+    "PRE010_BACKUP=PASS ledger_branch=$(if($before.HasFailed011){'011_FAILED_RECONCILIATION'}elseif($before.Has011){'011_APPLIED'}else{'011_ABSENT'})"
 }
 
 if ($BackupPre010) {
     Invoke-Pre010Backup
+    return
+}
+if ($Backup011Reconciliation) {
+    Invoke-Pre010Backup -Reconciliation $true
     return
 }
 

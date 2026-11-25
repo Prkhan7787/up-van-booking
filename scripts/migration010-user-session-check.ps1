@@ -3,6 +3,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib/migration011-apply-credentials.ps1')
 $results = [ordered]@{
     checked_utc = [DateTime]::UtcNow.ToString('o')
     status = 'BLOCKED'
@@ -12,7 +13,10 @@ $results = [ordered]@{
     DBA_CURRENT_USER = $null
     DBA_VERSION = $null
     DBA_SERVER_UUID = $null
+    APPLY011_ACCOUNT = 'UNKNOWN'
+    APPLY011_ACCOUNT_LOCK = 'UNKNOWN'
     APPLY_CREDENTIAL = 'MISSING'
+    APPLY011_CREDENTIAL = 'MISSING'
     result_file = $ResultPath
 }
 
@@ -23,6 +27,8 @@ try {
     if ($who -match 'S-1-16-8192') { $results.integrity = 'MEDIUM' }
     elseif ($who -match 'S-1-16-12288') { $results.integrity = 'HIGH' }
     elseif ($who -match 'S-1-16-4096') { $results.integrity = 'LOW' }
+
+    if ($results.integrity -ne 'MEDIUM') { throw 'NORMAL_WINDOWS_MEDIUM_SESSION_REQUIRED' }
 
     $mysqlEditor = @(
         'C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql_config_editor.exe',
@@ -36,9 +42,9 @@ try {
         # MySQL's utility masks passwords. Keep output only in memory and retain path names.
         $pathOutput = & $mysqlEditor print --all 2>$null | Out-String
         $pathExit = $LASTEXITCODE
-        $paths = @([regex]::Matches($pathOutput, '\[(?<name>[^\]]+)\]') | ForEach-Object { $_.Groups['name'].Value })
+        $pathStatus = Get-Migration011LoginPathStatus -ExitCode $pathExit -Output $pathOutput
         $pathOutput = $null
-        if ($pathExit -ne 0 -or -not ($paths -contains 'upvan3306-backup')) {
+        if ($pathStatus -ne 'PRESENT') {
             $results.DBA_LOGIN = 'BLOCKED'
         } elseif (-not $mysql) {
             $results.DBA_LOGIN = 'BLOCKED'
@@ -59,12 +65,33 @@ try {
                 $results.DBA_LOGIN = 'FAIL'
             }
             $probe = $null; $line = $null; $parts = $null
+            if ($results.DBA_LOGIN -eq 'PASS') {
+                $accountQuery = "SELECT CONCAT(COUNT(*), CHAR(9), COALESCE(MAX(account_locked), 'UNKNOWN')) FROM mysql.user WHERE user='up_van_migration011_apply' AND host='127.0.0.1'"
+                $accountProbe = & $mysql '--login-path=upvan3306-backup' '--protocol=TCP' '--host=127.0.0.1' '--port=3306' '--database=up_van_booking_test' '--connect-timeout=5' '--batch' '--raw' '--skip-column-names' '--execute' $accountQuery 2>$null
+                $accountExit = $LASTEXITCODE
+                $accountLine = [string](@($accountProbe) | Select-Object -First 1)
+                $accountParts = $accountLine -split "`t", 2
+                if ($accountExit -eq 0 -and $accountParts.Count -eq 2 -and $accountParts[0] -eq '0') {
+                    $results.APPLY011_ACCOUNT = 'MISSING'
+                    $results.APPLY011_ACCOUNT_LOCK = 'NOT_APPLICABLE'
+                } elseif ($accountExit -eq 0 -and $accountParts.Count -eq 2 -and $accountParts[0] -eq '1' -and $accountParts[1] -in @('Y','N')) {
+                    $results.APPLY011_ACCOUNT = 'PRESENT'
+                    $results.APPLY011_ACCOUNT_LOCK = $accountParts[1]
+                } else {
+                    $results.APPLY011_ACCOUNT = 'UNKNOWN'
+                }
+                $accountProbe = $null; $accountLine = $null; $accountParts = $null
+            }
         }
     }
 
     $store = Join-Path (Join-Path $env:LOCALAPPDATA 'UPVanBooking') 'migration010-apply.dpapi'
     if (Test-Path -LiteralPath $store -PathType Leaf) {
         $results.APPLY_CREDENTIAL = 'READY'
+    }
+    $store011 = Join-Path (Join-Path (Join-Path $env:LOCALAPPDATA 'UPVanBooking') 'migration011') 'apply.dpapi'
+    if (Test-Path -LiteralPath $store011 -PathType Leaf) {
+        $results.APPLY011_CREDENTIAL = 'PRESENT_UNVERIFIED'
     }
 } catch {
     $results.status = 'BLOCKED'

@@ -27,6 +27,7 @@ final class AdminPdoFake extends PDO
     public function __construct(public array $grants,public string $database='up_van_booking_test',public string $account='up_van_auth_test@127.0.0.1'){}
     public function getAttribute(int $attribute): mixed {return match($attribute){PDO::ATTR_DRIVER_NAME=>'mysql',PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_EMULATE_PREPARES=>false,default=>null};}
     public function query(string $query,?int $fetchMode=null,mixed ...$fetchModeArgs): PDOStatement|false {
+        if($query==='SELECT DATABASE()')return new AdminStatementFake($query,[],$this->database);
         if(str_starts_with($query,'SELECT DATABASE()'))return new AdminStatementFake($query,[['db_name'=>$this->database,'account_name'=>$this->account,'partial_revokes'=>0]]);
         if($query==='SELECT CURRENT_USER()')return new AdminStatementFake($query,[],$this->account);
         if($query==='SELECT @@GLOBAL.partial_revokes')return new AdminStatementFake($query,[],0);
@@ -94,4 +95,17 @@ foreach($db->statements as $s){repoCheck(!preg_match('/\b(?:DROP|ALTER|TRUNCATE|
 $repo->setPasswordHash(20,'offline-hash-only');
 $passwordSql=$db->statements[array_key_last($db->statements)];
 repoCheck($passwordSql->sql==='UPDATE users SET password_hash=:hash WHERE id=:id' && $passwordSql->params===['hash'=>'offline-hash-only','id'=>20],'Password reset binds hash and target ID to approved column UPDATE');
+$blocked=false;
+try{$repo->createUser('0810000000',null,'Fixture','offline-hash-only','Fixture nickname');}catch(App\Core\AdminUsersUnavailableException){$blocked=true;}
+repoCheck($blocked && !$repo->driverCreationEnabled && end($db->statements)===$passwordSql,'Legacy Admin grants keep normal management enabled and refuse Driver INSERT before SQL');
+$driverGrants=[...App\Database\DriverAuthGrantPlan::grantSql(),...AdminUserGrantPlan::supplementalSql(),AdminUserGrantPlan::driverCreationSql()];
+$driverDb=new AdminPdoFake($driverGrants);
+$driverRepo=new PdoAdminUserRepository($driverDb);
+App\Database\ConnectionFactory::assertDriverAuthGrants($driverDb);
+repoCheck($driverRepo->driverCreationEnabled,'Reviewed combined Driver and Admin grants satisfy both call sites');
+$driverRepo->transaction(fn()=>$driverRepo->createUser('0810000000',null,'Fixture','offline-hash-only','Fixture nickname'));
+$driverInsert=array_values(array_filter($driverDb->statements,static fn(AdminStatementFake $stmt):bool=>str_starts_with($stmt->sql,'INSERT INTO users')))[0];
+repoCheck(str_contains($driverInsert->sql,':nickname') && $driverInsert->params['nickname']==='Fixture nickname' && $driverInsert->params['email']===null && $driverDb->commits===1,'Driver INSERT binds nickname and nullable email within a transaction');
+$excess=[...$driverGrants,"GRANT INSERT (`auth_version`) ON `up_van_booking_test`.`users` TO 'up_van_auth_test'@'127.0.0.1'"];
+repoCheck(App\Database\ConnectionFactory::evaluateAuthRuntimeGrants($excess,false,true)['status']==='FAIL','The retired self-registration INSERT privilege is rejected by the grant guard');
 echo 'PASS: ',$checks,' Admin repository/grant offline checks; PDO fakes only.',PHP_EOL;

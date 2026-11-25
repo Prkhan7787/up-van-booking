@@ -1,4 +1,4 @@
-<?php declare(strict_types=1); $search=$search ?? ''; $selectedRole=$selectedRole ?? ''; ?>
+<?php declare(strict_types=1); $search=$search ?? ''; $selectedRole=$selectedRole ?? ''; $driverCreationEnabled=$driverCreationEnabled ?? false; ?>
 <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between" data-admin-notice="<?= !empty($notice) ? 'success' : '' ?>">
     <div>
         <p class="text-sm font-bold tracking-wide text-up">ADMINISTRATION</p>
@@ -33,12 +33,40 @@
     </form>
 </section>
 
+<details class="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-7" <?= !empty($driverFormError) ? 'open' : '' ?>>
+    <summary class="min-h-11 cursor-pointer rounded text-xl font-bold text-up">สร้างบัญชีพนักงานขับรถ</summary>
+    <p class="mt-2 text-sm text-slate-600">ใช้เบอร์โทรศัพท์เข้าสู่ระบบ ระบบกำหนดบทบาทพนักงานขับรถให้อัตโนมัติ</p>
+    <?php if (!$driverCreationEnabled): ?>
+        <p class="mt-2 text-sm text-slate-600">ยังไม่เปิดให้สร้างบัญชีพนักงานขับรถ สิทธิ์ฐานข้อมูลยังไม่พร้อม</p>
+    <?php endif; ?>
+    <form action="/admin/users" method="post" class="mt-4" <?= $driverCreationEnabled ? 'data-admin-confirm="สร้างบัญชีพนักงานขับรถ" data-account-create' : 'data-unavailable-form' ?>>
+        <input type="hidden" name="_token" value="<?= e(App\Core\Csrf::token()) ?>">
+        <input type="hidden" name="action" value="create_driver">
+        <fieldset <?= !$driverCreationEnabled ? 'disabled' : '' ?> class="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <legend class="sr-only">ข้อมูลบัญชีพนักงานขับรถ</legend>
+            <?php foreach ([
+                'real_name'=>['ชื่อจริง','text','name','maxlength="150"'],
+                'nickname'=>['ชื่อเล่น','text','nickname','maxlength="80"'],
+                'phone'=>['เบอร์โทรศัพท์มือถือ','tel','tel','maxlength="32"'],
+                'password'=>['รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)','password','new-password','minlength="6"'],
+                'password_confirmation'=>['ยืนยันรหัสผ่าน','password','new-password','minlength="6"'],
+            ] as $field=>[$label,$type,$autocomplete,$length]): ?>
+                <div>
+                    <label for="driver-<?= e($field) ?>" class="mb-2 block text-sm font-semibold"><?= e($label) ?></label>
+                    <input id="driver-<?= e($field) ?>" name="<?= e($field) ?>" type="<?= e($type) ?>" autocomplete="<?= e($autocomplete) ?>" <?= $length ?> required class="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 disabled:bg-slate-100">
+                </div>
+            <?php endforeach; ?>
+        </fieldset>
+        <button type="submit" <?= !$driverCreationEnabled ? 'disabled' : '' ?> class="mt-5 inline-flex min-h-12 items-center rounded-xl bg-up px-5 py-3 font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">สร้างบัญชีพนักงานขับรถ</button>
+    </form>
+</details>
+
 <section class="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-labelledby="accounts-title">
     <div class="flex flex-col gap-4 border-b border-slate-200 p-5 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
         <div><h2 id="accounts-title" class="text-xl font-bold">บัญชีผู้ใช้</h2></div>
         <form class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(10rem,1fr)_10rem_auto]" action="/admin/users" method="get">
             <label class="sr-only" for="user-search">ค้นหาบัญชี</label><input id="user-search" type="search" name="q" <?= !$actionsEnabled ? 'disabled' : '' ?> maxlength="100" value="<?= e($search) ?>" placeholder="ค้นหา username, email หรือชื่อ" class="min-h-11 rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm">
-            <label class="sr-only" for="role-filter">กรองตามบทบาท</label><select id="role-filter" name="role" <?= !$actionsEnabled ? 'disabled' : '' ?> class="min-h-11 min-w-0 max-w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm"><option value="">ทุกบทบาท</option><?php foreach ($roles as $role): ?><option value="<?= e($role['value']) ?>" <?= $selectedRole===$role['value'] ? 'selected' : '' ?>><?= e(App\Services\RoleLabels::label($role['value'])) ?></option><?php endforeach; ?></select>
+            <label class="sr-only" for="role-filter">กรองตามบทบาท</label><select id="role-filter" name="role" <?= !$actionsEnabled ? 'disabled' : '' ?> class="min-h-11 min-w-0 max-w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm"><option value="">ทุกบทบาท</option><?php foreach ([...array_column($roles,'value'),'driver'] as $role): ?><option value="<?= e($role) ?>" <?= $selectedRole===$role ? 'selected' : '' ?>><?= e(App\Services\RoleLabels::label($role)) ?></option><?php endforeach; ?></select>
             <button type="submit" <?= !$actionsEnabled ? 'disabled' : '' ?> class="min-h-11 rounded-xl bg-up px-4 py-2 font-bold text-white disabled:bg-slate-300">ค้นหา</button>
         </form>
     </div>
@@ -49,9 +77,10 @@
         <?php foreach ($accountRows as $row): $protected=App\Services\UsernamePolicy::normalize((string)$row['username'])==='admin1'; $own=(int)$row['id']===($actorId ?? 0); ?>
             <tr>
                 <td><strong class="block break-all text-slate-900"><?= e($row['username'] ?? '—') ?></strong><span class="mt-1 block break-words text-slate-700"><?= e($row['display_name']) ?></span><span class="mt-1 block break-all text-xs text-slate-500"><?= e($row['email']) ?></span></td>
-                <td><span class="mb-2 block text-xs font-semibold text-slate-500 md:hidden">บทบาทหลัก</span><?php if ($protected || $own): ?><span class="block py-2 text-up"><?= e(implode(', ',array_map(App\Services\RoleLabels::label(...),$row['roles']))) ?></span><?php else: ?><?php require __DIR__.'/role-editor.php'; ?><?php endif; ?></td>
+                <td><span class="mb-2 block text-xs font-semibold text-slate-500 md:hidden">บทบาทหลัก</span><?php if ($protected || $own || in_array('driver',$row['roles'],true)): ?><span class="block py-2 text-up"><?= e(implode(', ',array_map(App\Services\RoleLabels::label(...),$row['roles']))) ?></span><?php else: ?><?php require __DIR__.'/role-editor.php'; ?><?php endif; ?></td>
                 <td><span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold <?= (bool)$row['is_active'] ? 'bg-up-50 text-up' : 'bg-slate-100 text-slate-600' ?>"><?= (bool)$row['is_active'] ? 'เปิดใช้งาน' : 'ระงับ' ?></span></td>
                 <td><div class="flex flex-wrap items-start gap-2">
+                    <a href="<?= e('/admin/users/microsoft?user_id='.$row['id']) ?>" class="inline-flex min-h-11 items-center rounded-lg bg-up-50 px-3 py-2 text-xs font-semibold text-up">Microsoft 365</a>
                     <a href="<?= e('/admin/users?'.http_build_query(['q'=>$search,'role'=>$selectedRole,'page'=>$page ?? 1,'history'=>$row['id']]).'#user-history') ?>" class="inline-flex min-h-11 items-center rounded-lg bg-up-50 px-3 py-2 text-xs font-semibold text-up" aria-label="<?= e('ดูประวัติการเปลี่ยนแปลงของ '.$row['username']) ?>">ดูประวัติ</a>
                     <?php if (!$protected && !$own): ?><details class="text-xs"><summary class="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-3 py-3 font-semibold text-up">รีเซ็ตรหัสผ่าน</summary>
                         <form action="/admin/users" method="post" data-admin-confirm="ยืนยันรีเซ็ตรหัสผ่านบัญชีนี้" class="mt-2 grid gap-2">

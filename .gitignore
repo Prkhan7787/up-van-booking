@@ -4,6 +4,7 @@
 !.env.example
 .env.auth-recovery-state.json
 .env.auth-recovery.lock
+*.dpapi
 *รหัส*.txt
 
 # Installed runtimes and dependencies
@@ -26,6 +27,10 @@ tmp/
 *.backup
 *.dump
 *.sql.gz
+*.sql.bz2
+*.sql.zst
+/pre010-backups/
+/schema-snapshots/
 *.pem
 *.key
 *.p12

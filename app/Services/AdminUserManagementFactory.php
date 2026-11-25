@@ -14,6 +14,7 @@ final class AdminUserManagementFactory
         if (!AuthFeature::testExecutionEnabled()) throw new AdminUsersUnavailableException();
         // Repository verifies test identity and the complete reviewed Admin grant
         // plan before reading account data or executing any write.
-        return new AdminUserManagementService(new PdoAdminUserRepository(ConnectionFactory::connect('auth_test')),new PasswordHasher());
+        $repository = new PdoAdminUserRepository(ConnectionFactory::connect('auth_test'));
+        return new AdminUserManagementService($repository,new PasswordHasher(),$repository->driverCreationEnabled);
     }
 }

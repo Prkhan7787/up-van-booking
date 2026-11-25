@@ -239,6 +239,74 @@ final class MigrationRunner
         }
     }
 
+    /** Explicit independent branch; canonical sequential apply() remains unchanged. */
+    public function microsoft011Apply(string $backupDirectory,string $manifestSha256): array
+    {
+        if($this->target!==MigrationTarget::TEST)throw new SafetyException('MIGRATION_011_TEST_ONLY');
+        Migration011ApplyGuard::requireApproval();
+        $this->lastSafetyCheck='MIGRATION_011_IDENTITY';Migration011ApplyGuard::assertIdentity($this->db);
+        $lock=$this->target.':migrations';
+        $this->lastSafetyCheck='MIGRATION_011_LOCK';
+        if((string)($this->rows('SELECT GET_LOCK(:name, 0) AS acquired',['name'=>$lock])[0]['acquired']??'')!=='1')throw new SafetyException('MIGRATION_011_LOCK_UNAVAILABLE');
+        $started=false;$completed=0;$ledgerCompleted=null;$applied=false;$stage='PRECONDITIONS';$failure=null;$released=false;$result=null;
+        $write=function(string $sql,array $params):void{
+            $q=$this->db->prepare($sql);
+            if(!$q->execute($params)||$q->rowCount()!==1)throw new SafetyException('MIGRATION_011_LEDGER_WRITE_UNCONFIRMED');
+        };
+        $ledger=fn():array=>$this->rows('SELECT version, checksum, status, completed_statements, total_statements FROM schema_migrations ORDER BY version');
+        $held=function()use($lock):void{
+            if((string)($this->rows('SELECT IS_USED_LOCK(:name) = CONNECTION_ID() AS held',['name'=>$lock])[0]['held']??'')!=='1')throw new SafetyException('MIGRATION_011_LOCK_LOST');
+        };
+        try {
+            Migration011ApplyGuard::assertIdentity($this->db);
+            $this->lastSafetyCheck='MIGRATION_011_GRANTS';Migration011ApplyGuard::assertGrants($this->db);
+            $session=$this->db->query('SELECT @@SESSION.autocommit AS autocommit, @@SESSION.foreign_key_checks AS foreign_key_checks')->fetch(PDO::FETCH_ASSOC);
+            if($this->db->inTransaction()||(string)($session['autocommit']??'')!=='1'||(string)($session['foreign_key_checks']??'')!=='1')throw new SafetyException('MIGRATION_011_SESSION_REJECTED');
+            $this->lastSafetyCheck='MIGRATION_011_BACKUP';$backup=Migration011ApplyBackup::verify($backupDirectory,$manifestSha256);
+            $this->lastSafetyCheck='MIGRATION_011_SQL_AND_LEDGER';$branch=MigrationPlan::microsoft011();$entry=$branch['migration'];
+            Migration011Validator::assertLedger($ledger());
+            $this->lastSafetyCheck='MIGRATION_011_LIVE_PRECONDITIONS';
+            Migration011Validator::assertSchema(Migration011Validator::metadata($this->db),false);
+            $held();
+            $stage='LEDGER_STARTED';$this->lastSafetyCheck='MIGRATION_011_EXECUTION';
+            $write("INSERT INTO schema_migrations (version,checksum,status,total_statements) VALUES (:version,:checksum,'started',1)",['version'=>$entry['version'],'checksum'=>$entry['sha256']]);
+            $started=true;$ledgerCompleted=0;
+            $stage='LOCK_CHECK';$held();
+            $stage='DDL';
+            if($this->db->exec($entry['statements'][0])===false)throw new SafetyException('MIGRATION_011_DDL_UNCONFIRMED');
+            $completed=1;$stage='LEDGER_PROGRESS';
+            $write("UPDATE schema_migrations SET completed_statements=1 WHERE version=:version AND status='started' AND completed_statements=0",['version'=>$entry['version']]);
+            $ledgerCompleted=1;$stage='POSTCONDITIONS';
+            Migration011ApplyGuard::assertIdentity($this->db);$held();
+            Migration011Validator::assertSchema(Migration011Validator::metadata($this->db),true);
+            Migration011Validator::assertLedger($ledger(),'progress');
+            $stage='LEDGER_APPLIED';$held();
+            $write("UPDATE schema_migrations SET status='applied',finished_at=UTC_TIMESTAMP(6) WHERE version=:version AND status='started' AND completed_statements=1 AND total_statements=1",['version'=>$entry['version']]);
+            $applied=true;Migration011Validator::assertLedger($ledger(),'after');
+            $result=['status'=>'PASS','migration'=>$entry['version'],'checksum'=>$entry['sha256'],'confirmed_completed_statements'=>1,
+                'ledger'=>'applied 1/1','schema_postconditions'=>'PASS','010'=>'absent_pending','backup'=>$backup,'automatic_retry'=>false];
+        } catch(Throwable $e) {
+            if($started&&!$applied){
+                $failureCode=match($stage){
+                    'DDL'=>'statement_failed',
+                    'POSTCONDITIONS'=>'postcondition_failed',
+                    'LOCK_CHECK'=>'execution_guard_failed',
+                    default=>'ledger_failed',
+                };
+                try{$held();$write("UPDATE schema_migrations SET status='failed',failure_code=:failure_code WHERE version=:version AND status='started'",[
+                    'failure_code'=>$failureCode,'version'=>MigrationPlan::MICROSOFT011['version']]);}catch(Throwable){}
+            }
+            $failure=$stage==='PRECONDITIONS'?$e:MigrationExecutionException::fromFailure($e,$stage==='DDL'?1:0,$stage,MigrationPlan::MICROSOFT011['version'],$completed,$ledgerCompleted,$applied);
+        } finally {
+            try{$released=(string)($this->rows('SELECT RELEASE_LOCK(:name) AS released',['name'=>$lock])[0]['released']??'')==='1';}catch(Throwable){}
+        }
+        // An advisory lock only serializes cooperating runners. It cannot stop external DDL.
+        if($failure instanceof MigrationExecutionException)throw $failure->withLockRelease($released);
+        if(!$released)throw MigrationExecutionException::fromFailure(new SafetyException('MIGRATION_011_LOCK_RELEASE_UNVERIFIED'),0,'LOCK_RELEASE',MigrationPlan::MICROSOFT011['version'],$completed,$ledgerCompleted,$applied)->withLockRelease(false);
+        if($failure!==null)throw $failure;
+        return $result+['migration_lock_released'=>true];
+    }
+
     /** Apply only the pinned 010 plan on the dedicated live test connection. */
     public function driver010Apply(string $backupDirectory, string $manifestSha256): array
     {
@@ -262,7 +330,7 @@ final class MigrationRunner
                 throw new SafetyException('MIGRATION_010_APPLY_SESSION_REJECTED');
             }
             $this->lastSafetyCheck = 'MIGRATION_010_APPLY_BACKUP';
-            $backup = Migration010ApplyBackup::verify($backupDirectory, $manifestSha256);
+            $backup = Migration010ApplyBackup::verify($backupDirectory, $manifestSha256, requireFresh: true);
             $this->lastSafetyCheck = 'MIGRATION_010_SQL_CHECKSUM';
             $plan = MigrationPlan::load(include010: true);
             $entry = end($plan);
@@ -270,7 +338,11 @@ final class MigrationRunner
                 throw new SafetyException('MIGRATION_010_PLAN_REJECTED');
             }
             $this->lastSafetyCheck = 'MIGRATION_010_APPLY_LIVE_SCHEMA';
-            Migration010DriverValidator::assertLedger($this->driver010Ledger(), false);
+            $ledger = $this->driver010Ledger();
+            Migration010DriverValidator::assertLedger($ledger, false);
+            if ($backup['ledger_state'] !== Migration010ApplyGuard::backupLedgerState($ledger)) {
+                throw new SafetyException('MIGRATION_010_BACKUP_LIVE_BRANCH_MISMATCH');
+            }
             $this->assertDriver010ApplySchema(false);
             // The named lock serializes cooperating migration runners only.
             $this->assertDriver010Lock($lock);
@@ -312,7 +384,14 @@ final class MigrationRunner
         if ($baseline['ledger'] !== 'present') throw new SafetyException('MIGRATION_010_LIVE_LEDGER_HIDDEN');
 
         // Mirror 009's live postconditions. Ledger alone cannot prove its soft-delete schema.
-        $sql = <<<'SQL'
+        if ((string)$this->db->query(self::driver010BaselineSchemaQuery())->fetchColumn() !== '1') {
+            throw new SafetyException('MIGRATION_010_BASELINE_SCHEMA_REJECTED');
+        }
+    }
+
+    public static function driver010BaselineSchemaQuery(): string
+    {
+        return <<<'SQL'
 SELECT (
     (SELECT COUNT(*) FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('roles','schema_migrations','booking_requests')
@@ -339,9 +418,6 @@ SELECT (
         AND CONSTRAINT_TYPE='CHECK' AND ENFORCED='YES')
 ) AS ready
 SQL;
-        if ((string)$this->db->query($sql)->fetchColumn() !== '1') {
-            throw new SafetyException('MIGRATION_010_BASELINE_SCHEMA_REJECTED');
-        }
     }
 
     private function driver010LedgerWrite(string $sql, array $params): void
@@ -388,14 +464,7 @@ SQL;
             $stage = 'POSTCONDITIONS';
             Migration010ApplyGuard::assertIdentity($this->db);
             $this->assertDriver010ApplySchema(true);
-            $ledger = $this->driver010Ledger();
-            $pending = array_pop($ledger);
-            Migration010DriverValidator::assertLedger($ledger,false);
-            if (($pending['version'] ?? null) !== $version || ($pending['checksum'] ?? null) !== $entry['sha256']
-                || ($pending['status'] ?? null) !== 'started' || (string)($pending['completed_statements'] ?? '') !== '3'
-                || (string)($pending['total_statements'] ?? '') !== '3') {
-                throw new SafetyException('MIGRATION_010_LEDGER_PROGRESS_REJECTED');
-            }
+            Migration010DriverValidator::assertLedgerProgress($this->driver010Ledger(),3);
             $this->assertDriver010Lock($lock);
             $stage = 'LEDGER_APPLIED';
             $this->driver010LedgerWrite(

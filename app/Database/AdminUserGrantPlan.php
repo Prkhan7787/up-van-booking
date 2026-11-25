@@ -24,4 +24,16 @@ final class AdminUserGrantPlan
             "GRANT INSERT (`user_id`, `role_id`), DELETE ON `up_van_booking_test`.`user_roles` TO 'up_van_auth_test'@'127.0.0.1'",
         ];
     }
+
+    public static function driverCreationRules(): array
+    {
+        return BookingCapabilityGrantGuard::merge(self::rules(), ['tables'=>[
+            'users'=>['INSERT'=>['nickname']],
+        ]]);
+    }
+
+    public static function driverCreationSql(): string
+    {
+        return "GRANT INSERT (`nickname`) ON `up_van_booking_test`.`users` TO 'up_van_auth_test'@'127.0.0.1'";
+    }
 }

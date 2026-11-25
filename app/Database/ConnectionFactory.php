@@ -19,6 +19,7 @@ final class ConnectionFactory
             'test_provisioner' => ['prefix' => 'TEST_PROVISIONER_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_provisioner'],
             'migration_preflight_test' => ['prefix' => 'MIGRATION_PREFLIGHT_DB_', 'database' => MigrationTarget::TEST, 'username' => Migration010ReadOnlyGrantPlan::ACCOUNT],
             Migration010ApplyGuard::PURPOSE => ['prefix' => 'MIGRATION_010_APPLY_DB_', 'database' => MigrationTarget::TEST, 'username' => Migration010ApplyGuard::ACCOUNT],
+            Migration011ApplyGuard::PURPOSE => ['prefix' => 'MIGRATION_011_APPLY_DB_', 'database' => MigrationTarget::TEST, 'username' => Migration011ApplyGuard::ACCOUNT],
             'migration_test' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
             'migration_test_006' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
             'migration_test_006_resume' => ['prefix' => 'MIGRATION_TEST_DB_', 'database' => MigrationTarget::TEST, 'username' => 'up_van_test_migrator'],
@@ -28,13 +29,13 @@ final class ConnectionFactory
             default => throw new SafetyException('Unknown connection purpose.'),
         };
         $prefix = $connection['prefix'];
-        if(in_array($purpose, ['migration_preflight_test', Migration010ApplyGuard::PURPOSE], true)) {
+        if(in_array($purpose, ['migration_preflight_test', Migration010ApplyGuard::PURPOSE, Migration011ApplyGuard::PURPOSE], true)) {
             // The 010 profiles are process-only, with no runtime or legacy migrator fallback.
             $config=[];
             foreach(['HOST'=>'host','PORT'=>'port','DATABASE'=>'database','USERNAME'=>'username','PASSWORD'=>'password'] as $suffix=>$key) {
                 $value=getenv($prefix.$suffix);
-                if($value===false || $value==='') throw new SafetyException($purpose === Migration010ApplyGuard::PURPOSE
-                    ? 'MIGRATION_010_APPLY_PROCESS_CONFIG_REQUIRED' : 'MIGRATION_PREFLIGHT_PROCESS_CONFIG_REQUIRED');
+                if($value===false || $value==='') throw new SafetyException($purpose === Migration011ApplyGuard::PURPOSE ? 'MIGRATION_011_APPLY_PROCESS_CONFIG_REQUIRED' : ($purpose === Migration010ApplyGuard::PURPOSE
+                    ? 'MIGRATION_010_APPLY_PROCESS_CONFIG_REQUIRED' : 'MIGRATION_PREFLIGHT_PROCESS_CONFIG_REQUIRED'));
                 $config[$key]=$value;
             }
         } else {
@@ -49,6 +50,7 @@ final class ConnectionFactory
         if(in_array($purpose,['migration_test_007','migration_test_008'],true))Migration007TargetIdentity::assertConfig($config);
         if($purpose==='migration_preflight_test') DriverDatabaseIdentity::assertConfig($config,Migration010ReadOnlyGrantPlan::ACCOUNT);
         if($purpose===Migration010ApplyGuard::PURPOSE) DriverDatabaseIdentity::assertConfig($config,Migration010ApplyGuard::ACCOUNT);
+        if($purpose===Migration011ApplyGuard::PURPOSE) DriverDatabaseIdentity::assertConfig($config,Migration011ApplyGuard::ACCOUNT);
         if($purpose==='reset_maintenance' && ($config['port']!=='3306' || $config['host']!=='127.0.0.1' || $config['database']!==MigrationTarget::TEST))throw new SafetyException('Reset maintenance target rejected.');
         if ($config['database'] !== $connection['database']) throw new SafetyException('Database target rejected.');
         if ($config['username'] !== $connection['username']) throw new SafetyException('MySQL account does not match connection purpose.');
@@ -59,8 +61,28 @@ final class ConnectionFactory
         return $config;
     }
 
+    /** CLI password comes from the 010 wrapper's private stdin pipe. */
+    public static function connectDriver010(#[\SensitiveParameter] string $password): PDO
+    {
+        Migration010ApplyGuard::requireApproval();
+        $pdo = self::openPdo([
+            'host'=>'127.0.0.1', 'port'=>'3306', 'database'=>MigrationTarget::TEST,
+            'username'=>Migration010ApplyGuard::ACCOUNT, 'password'=>$password,
+        ], true);
+        try {
+            Migration010ApplyGuard::assertIdentity($pdo);
+            return $pdo;
+        } catch (PDOException $error) {
+            throw SafeDatabaseException::fromPdo($error, false);
+        }
+    }
+
     public static function connect(string $purpose = 'runtime', bool $selectDatabase = true): PDO
     {
+        if ($purpose === Migration011ApplyGuard::PURPOSE) {
+            Migration011ApplyGuard::requireApproval();
+            if (!$selectDatabase) throw new SafetyException('MIGRATION_011_TEST_DATABASE_REQUIRED');
+        }
         if ($purpose === Migration010ApplyGuard::PURPOSE) {
             Migration010ApplyGuard::requireApproval();
             if (!$selectDatabase) throw new SafetyException('MIGRATION_010_TEST_DATABASE_REQUIRED');
@@ -69,6 +91,10 @@ final class ConnectionFactory
         if($purpose==='migration_test_006_resume') Migration006RestoreIdentity::assertConfig($config);
         $pdo = self::openPdo($config, $selectDatabase);
         try {
+            if ($purpose === Migration011ApplyGuard::PURPOSE) {
+                Migration011ApplyGuard::assertIdentity($pdo);
+                return $pdo;
+            }
             if ($purpose === Migration010ApplyGuard::PURPOSE) {
                 Migration010ApplyGuard::assertIdentity($pdo);
                 return $pdo;
@@ -171,7 +197,7 @@ final class ConnectionFactory
         return $result;
     }
 
-    private static function openPdo(array $config, bool $selectDatabase): PDO
+    private static function openPdo(#[\SensitiveParameter] array $config, bool $selectDatabase): PDO
     {
         if (!extension_loaded('pdo_mysql')) throw new SafetyException('PDO MySQL driver is unavailable.');
         $host = $config['host'] === '::1' ? '[::1]' : $config['host'];
@@ -195,6 +221,7 @@ final class ConnectionFactory
         $profiles=[
             'auth'=>AuthRuntimeGrantPlan::rules(),
             'admin_users'=>AdminUserGrantPlan::rules(),
+            'microsoft_admin_users'=>MicrosoftIdentityGrantPlan::rules(),
             'system_logs'=>SystemLogGrantPlan::rules(),
             'booking_read'=>RequesterBookingReadGrantPlan::rules(),
             'booking_read_logs'=>RequesterBookingReadGrantPlan::rules(true),
@@ -229,6 +256,15 @@ final class ConnectionFactory
         $runtimeProfiles = $profiles;
         foreach ($runtimeProfiles as $name=>$base) {
             $profiles['driver_'.$name] = BookingCapabilityGrantGuard::merge($base, DriverAuthGrantPlan::additions());
+        }
+        // Compose Driver provisioning only with the minimal profile and the
+        // reviewed booking profile used by the test site.
+        foreach (['auth', 'vehicles_booking_read_province_fuel_intake_approval_delivery'] as $name) {
+            if (!isset($profiles['driver_'.$name])) continue;
+            $profiles['driver_admin_provisioning_'.$name] = BookingCapabilityGrantGuard::merge(
+                $profiles['driver_'.$name],
+                AdminUserGrantPlan::driverCreationRules(),
+            );
         }
         return GrantVerifier::evaluateProfiles($grants,MigrationTarget::TEST,$profiles,$partialRevokes,$rolesResolved);
     }

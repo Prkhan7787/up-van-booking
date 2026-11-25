@@ -68,6 +68,9 @@ namespace {
         public string $currentRole='NONE';
         public string $mandatoryRoles='';
         public ?array $ledger010=null;
+        public bool $ledger011Applied=false;
+        public string $ledger011Status='applied';
+        public string $ledger011Checksum=MigrationPlan::MICROSOFT011['sha256'];
         public array $extraGrants=[];
         public array $grantSubstitutions=[];
         public array $executed=[];
@@ -173,7 +176,11 @@ namespace {
             if (str_starts_with($sql,'SELECT version, checksum')) {
                 $ledger=$this->ledger;
                 if ($this->baselineChecksumMismatch) $ledger[0]['checksum']=str_repeat('0',64);
-                return $this->ledger010===null?$ledger:[...$ledger,$this->ledger010];
+                if ($this->ledger010!==null) $ledger[]=$this->ledger010;
+                if ($this->ledger011Applied) $ledger[]=['version'=>MigrationPlan::MICROSOFT011['version'],'checksum'=>$this->ledger011Checksum,
+                    'status'=>$this->ledger011Status,'completed_statements'=>1,'total_statements'=>1];
+                usort($ledger,static fn(array $a,array $b):int=>strcmp($a['version'],$b['version']));
+                return $ledger;
             }
             if (str_contains($sql,'chk_booking_deleted_fields')) {
                 $this->log[]=$this->applied===3?'postconditions':'preconditions';
@@ -238,6 +245,7 @@ namespace {
     $files=['up_van_booking_test_base_tables.sql'=>'verified fixture tables', 'calendar_events_view_restore.sql'=>'verified fixture view'];
     $manifest=['format'=>'upvan-pre010-logical-backup-v1','host'=>'127.0.0.1','port'=>3306,'database'=>MigrationTarget::TEST,
         'uuid'=>DriverDatabaseIdentity::UUID,'version'=>'8.4.9','ledger'=>'001-009 applied; 010 absent','calendar_view'=>'calendar_events',
+        'started_utc'=>gmdate('Y-m-d\TH:i:s\Z',time()-30),'finished_utc'=>gmdate('Y-m-d\TH:i:s\Z',time()-10),
         'calendar_dependencies'=>['booking_requests','vehicle_assignments'],'calendar_security'=>'INVOKER',
         'tables'=>['approval_decisions','audit_logs','auth_login_buckets','booking_notifications','booking_passengers',
             'booking_requests','booking_reviews','booking_status_history','drivers','roles','schema_migrations','user_roles',
@@ -253,6 +261,15 @@ namespace {
     $environment=&$GLOBALS['migration010FixtureEnvironment'];
     $apply=static fn(Apply010Pdo $pdo,?string $pin=null)=>(new MigrationRunner($pdo,MigrationTarget::TEST))->driver010Apply($dir,$pin??$hash);
     try {
+        foreach (["fixture-stdin-password\0"=>true,"fixture-stdin-password"=>false,"fixture-stdin-password\r\n\0"=>false,"short\0"=>false,(str_repeat('x',256)."\0")=>false] as $input=>$valid) {
+            $pipe=fopen('php://memory','w+b');
+            fwrite($pipe,$input);
+            rewind($pipe);
+            try {
+                if ($valid) apply010Check(Migration010ApplyGuard::readPassword($pipe)==='fixture-stdin-password','valid stdin frame yields the exact credential');
+                else apply010Reject(fn()=>Migration010ApplyGuard::readPassword($pipe),'MIGRATION_010_STDIN_CREDENTIAL_REJECTED');
+            } finally {fclose($pipe);}
+        }
         foreach ([[],['TEST_DB_EXECUTION_APPROVED'=>'true'],['TEST_MIGRATION_010_APPLY_APPROVED'=>'true']] as $gates) {
             $environment=$gates;
             $db=new Apply010Pdo;
@@ -340,6 +357,51 @@ namespace {
             apply010Reject(fn()=>$apply($db),'MIGRATION_010_LEDGER_COUNT_OR_PARTIAL');
             apply010Check($db->log===['acquire','release'],'existing 010 row cannot enter apply or retry');
         }
+        // Independent branch: an already applied 011 row remains untouched while 010 applies.
+        $branchManifest=$manifest;
+        $branchManifest['ledger']='001-009 applied; 011 applied; 010 absent';
+        $branchManifest['tables'][]='microsoft_identities';
+        $branchJson=json_encode($branchManifest,JSON_THROW_ON_ERROR);
+        file_put_contents($dir.'/backup-manifest.json',$branchJson);
+        $branchPin=hash('sha256',$branchJson);
+        $db=new Apply010Pdo;
+        $db->ledger011Applied=true;
+        $result=$apply($db,$branchPin);
+        apply010Check($result['status']==='PASS' && $result['completed_statements']===3
+            && $db->ledger011Applied && $db->ledger011Status==='applied',
+            '010 applies with exact applied 011 branch while preserving 011 state');
+        apply010Check($db->ledger010['status']==='applied'
+            && $db->ledger010['completed_statements']===3 && end($db->log)==='release',
+            '011 branch keeps separate checksums and both migration ledger rows');
+        $db=new Apply010Pdo;
+        apply010Reject(fn()=>$apply($db,$branchPin),'MIGRATION_010_BACKUP_LIVE_BRANCH_MISMATCH');
+        apply010Check($db->log===['acquire','release'],'backup for a different live branch cannot enter the write path');
+        $stale=$branchManifest;
+        $stale['started_utc']=gmdate('Y-m-d\TH:i:s\Z',time()-3601);
+        $staleJson=json_encode($stale,JSON_THROW_ON_ERROR);
+        file_put_contents($dir.'/backup-manifest.json',$staleJson);
+        $db=new Apply010Pdo;
+        $db->ledger011Applied=true;
+        apply010Reject(fn()=>$apply($db,hash('sha256',$staleJson)),'MIGRATION_010_BACKUP_STALE_OR_STATE_REJECTED');
+        apply010Check($db->log===['acquire','release'],'stale backup cannot enter the write path');
+        file_put_contents($dir.'/backup-manifest.json',$branchJson);
+        $db=new Apply010Pdo;
+        $db->ledger011Applied=true;$db->ledger011Status='started';
+        apply010Reject(fn()=>$apply($db,$branchPin),'MIGRATION_010_LEDGER_DIRTY_OR_CHECKSUM');
+        apply010Check($db->ledger010===null && $db->executed===[] && $db->log===['acquire','release'],
+            'partial 011 ledger blocks 010 before any write');
+        $db=new Apply010Pdo;
+        $db->ledger011Applied=true;$db->ledger011Checksum=str_repeat('0',64);
+        apply010Reject(fn()=>$apply($db,$branchPin),'MIGRATION_010_LEDGER_DIRTY_OR_CHECKSUM');
+        apply010Check($db->ledger010===null && $db->executed===[] && $db->log===['acquire','release'],
+            '011 checksum mismatch blocks 010 before any write');
+        $branchWithoutTable=$branchManifest;$branchWithoutTable['tables']=array_values(array_diff($branchWithoutTable['tables'],['microsoft_identities']));
+        $branchWithoutTableJson=json_encode($branchWithoutTable,JSON_THROW_ON_ERROR);
+        file_put_contents($dir.'/backup-manifest.json',$branchWithoutTableJson);
+        apply010Reject(fn()=>$apply(new Apply010Pdo,hash('sha256',$branchWithoutTableJson)),'MIGRATION_010_BACKUP_BRANCH_STATE_REJECTED');
+        $manifestJson=json_encode($manifest,JSON_THROW_ON_ERROR);
+        file_put_contents($dir.'/backup-manifest.json',$manifestJson);
+        $hash=hash('sha256',$manifestJson);
         for ($number=1;$number<=3;$number++) {
             $db=new Apply010Pdo;
             $db->failStatement=$number;

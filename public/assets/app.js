@@ -13,10 +13,11 @@ document.addEventListener('submit', (event) => {
   });
 });
 
-if (document.body?.dataset.authError === 'invalid' && window.Swal) {
+const loginError = document.querySelector('[data-login-error]');
+if (loginError && window.Swal) {
   Swal.fire({
     title: 'เข้าสู่ระบบไม่สำเร็จ',
-    text: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+    text: loginError.textContent.trim(),
     icon: 'error',
     confirmButtonText: 'ลองอีกครั้ง',
     buttonsStyling: false,
